@@ -5,6 +5,7 @@ use tracing_subscriber;
 mod network;
 mod matching;
 mod settlement;
+mod vm_bridge;
 
 use network::GossipNode;
 use matching::MatchingEngine;
