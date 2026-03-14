@@ -45,13 +45,13 @@
 
 ### P1 — Smart Contract Hardening (From Skeleton to Secure)
 
-- [ ] **P1.1** EVM: Implement EIP-712 typed data signatures in `ZeroDexEscrow.sol` (domain separator, struct hash, `ecrecover`)
-- [ ] **P1.2** EVM: Add reentrancy guard (`ReentrancyGuard` or CEI pattern), nonce tracking to prevent replay
-- [ ] **P1.3** EVM: Add chain ID binding and deployed-address binding per EIP-712
+- [x] **P1.1** EVM: Implement EIP-712 typed data signatures in `ZeroDexEscrow.sol` (domain separator, struct hash, `ecrecover`)
+- [x] **P1.2** EVM: Add reentrancy guard (`ReentrancyGuard` or CEI pattern), nonce tracking to prevent replay
+- [x] **P1.3** EVM: Add chain ID binding and deployed-address binding per EIP-712
 - [ ] **P1.4** Solana: Implement Ed25519 instruction sysvar verification in `execute_swap`
 - [ ] **P1.5** Solana: Add PDA vaults for escrowed collateral instead of direct `transferFrom`
 - [ ] **P1.6** Solana: Add strict token account ownership & mint validation
-- [ ] **P1.7** Update `abi.rs` to include `signatureA`/`signatureB` in the encoded calldata (matches the Solidity function signature)
+- [x] **P1.7** Update `abi.rs` to include `signatureA`/`signatureB` in the encoded calldata (matches the Solidity function signature)
 
 ### P2 — Matching Engine Maturity
 
