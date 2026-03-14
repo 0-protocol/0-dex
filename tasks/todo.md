@@ -48,9 +48,9 @@
 - [x] **P1.1** EVM: Implement EIP-712 typed data signatures in `ZeroDexEscrow.sol` (domain separator, struct hash, `ecrecover`)
 - [x] **P1.2** EVM: Add reentrancy guard (`ReentrancyGuard` or CEI pattern), nonce tracking to prevent replay
 - [x] **P1.3** EVM: Add chain ID binding and deployed-address binding per EIP-712
-- [ ] **P1.4** Solana: Implement Ed25519 instruction sysvar verification in `execute_swap`
-- [ ] **P1.5** Solana: Add PDA vaults for escrowed collateral instead of direct `transferFrom`
-- [ ] **P1.6** Solana: Add strict token account ownership & mint validation
+- [x] **P1.4** Solana: Implement Ed25519 instruction sysvar verification in `execute_swap`
+- [x] **P1.5** Solana: Add PDA vaults for escrowed collateral instead of direct `transferFrom`
+- [x] **P1.6** Solana: Add strict token account ownership & mint validation
 - [x] **P1.7** Update `abi.rs` to include `signatureA`/`signatureB` in the encoded calldata (matches the Solidity function signature)
 
 ### P2 — Matching Engine Maturity
@@ -63,7 +63,7 @@
 
 ### P3 — Network Robustness
 
-- [ ] **P3.1** Make `GossipNode::run()` use `tokio::select!` to concurrently process swarm events AND outbound publish requests
+- [x] **P3.1** Make `GossipNode::run()` use `tokio::select!` to concurrently process swarm events AND outbound publish requests
 - [x] **P3.2** Add configurable CLI args: `--http-port`, `--listen-addr`, `--bootstrap-peers`, `--graphs-dir`
 - [ ] **P3.3** Add WebSocket-to-libp2p gateway mode for lightweight browser/Python agents
 - [ ] **P3.4** Implement peer scoring / rate limiting to prevent gossip spam
