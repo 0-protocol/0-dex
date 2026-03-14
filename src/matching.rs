@@ -10,14 +10,25 @@ pub struct MatchingEngine {
     vm: VM,
     local_intents: Vec<RuntimeGraph>,
     match_sender: mpsc::Sender<MatchProof>,
+    local_wallet_address: String,
+    local_signature: Vec<u8>,
 }
 
 impl MatchingEngine {
     pub fn new(match_sender: mpsc::Sender<MatchProof>) -> Self {
+        let wallet_address = std::env::var("ZERO_DEX_WALLET_ADDRESS")
+            .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string());
+        let local_sig = std::env::var("ZERO_DEX_WALLET_SIG")
+            .ok()
+            .and_then(|s| hex::decode(s.trim_start_matches("0x")).ok())
+            .unwrap_or_default();
+
         Self {
             vm: VM::new(),
             local_intents: Vec::new(),
             match_sender,
+            local_wallet_address: wallet_address,
+            local_signature: local_sig,
         }
     }
 
@@ -30,11 +41,10 @@ impl MatchingEngine {
     /// output tensors signify a mathematically sound exchange rate (price overlap).
     pub async fn evaluate_counterparty(
         &mut self, 
-        counterparty_graph: &RuntimeGraph,
+        counterparty_graph: RuntimeGraph,
         counterparty_address: &str,
         counterparty_sig: &str,
     ) -> bool {
-        // Securely run counterparty graph through an isolated, time-bounded VM (Gas Limit equivalent)
         let secure_vm = crate::vm_bridge::SecureVM::new(1_000_000, 100);
         let counterparty_result = secure_vm.evaluate_untrusted(counterparty_graph).await;
         
@@ -66,10 +76,13 @@ impl MatchingEngine {
                             
                             // Send to settlement layer
                             let proof = MatchProof {
-                                local_intent_id: "local_id".to_string(), // TODO: inject local wallet signature
+                                local_intent_id: self.local_wallet_address.clone(),
                                 counterparty_intent_id: counterparty_address.to_string(),
                                 settled_vector: local_vector.clone(),
-                                signature: hex::decode(counterparty_sig.trim_start_matches("0x")).unwrap_or_default(),
+                                local_signature: self.local_signature.clone(),
+                                counterparty_signature: hex::decode(
+                                    counterparty_sig.trim_start_matches("0x")
+                                ).unwrap_or_default(),
                             };
                             
                             let _ = self.match_sender.send(proof).await;

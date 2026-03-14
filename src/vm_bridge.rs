@@ -3,7 +3,6 @@
 use zerolang::{RuntimeGraph, VM};
 use tokio::time::timeout;
 use std::time::Duration;
-use tracing::warn;
 
 pub struct SecureVM {
     /// Max ops allowed for untrusted graphs (gas limit equivalent)
@@ -17,21 +16,16 @@ impl SecureVM {
         Self { max_ops, timeout_ms }
     }
 
-    /// Evaluates a counterparty graph in a sandboxed, time-bounded environment
-    pub async fn evaluate_untrusted(&self, graph: &RuntimeGraph) -> Result<Vec<zerolang::Tensor>, String> {
-        let mut local_vm = VM::new();
-        // Here we would strictly limit local_vm.max_ops if the 0-lang API supported it
-        
-        let result = timeout(Duration::from_millis(self.timeout_ms), async {
-            // Ideally VM execution should be yieldable/async to prevent thread blocking,
-            // but for now we run it synchronously inside the timeout task.
-            tokio::task::spawn_blocking({
-                let g = graph.clone();
-                move || {
-                    let mut vm = VM::new();
-                    vm.execute(&g)
-                }
-            }).await
+    /// Evaluates a counterparty graph in a sandboxed, time-bounded environment.
+    /// Takes ownership of the graph to move it into the blocking task.
+    pub async fn evaluate_untrusted(&self, graph: RuntimeGraph) -> Result<Vec<zerolang::Tensor>, String> {
+        let timeout_ms = self.timeout_ms;
+
+        let result = timeout(Duration::from_millis(timeout_ms), {
+            tokio::task::spawn_blocking(move || {
+                let mut vm = VM::new();
+                vm.execute(&graph)
+            })
         }).await;
 
         match result {

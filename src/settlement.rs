@@ -7,14 +7,14 @@ use tokio::sync::mpsc;
 use tracing::{info, error, debug};
 use zerolang::Tensor;
 use ethers::prelude::*;
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct MatchProof {
     pub local_intent_id: String,
     pub counterparty_intent_id: String,
     pub settled_vector: Tensor,
-    pub signature: Vec<u8>,
+    pub local_signature: Vec<u8>,
+    pub counterparty_signature: Vec<u8>,
 }
 
 pub struct SettlementEngine {
@@ -56,7 +56,6 @@ impl SettlementEngine {
         let amount_a = 1_000_000_000_000_000_000; // 1 WETH
         let amount_b = 3_000_000_000; // 3000 USDC
 
-        // 2. Encode the parameters using the ABI spec for ZeroDexEscrow.sol
         match crate::abi::encode_match_for_evm(
             &proof.local_intent_id,
             &proof.counterparty_intent_id,
@@ -64,56 +63,61 @@ impl SettlementEngine {
             token_b,
             amount_a,
             amount_b,
+            &proof.local_signature,
+            &proof.counterparty_signature,
             &proof.settled_vector
         ) {
             Ok(encoded_data) => {
                 info!("Successfully ABI-encoded settlement payload: 0x{}", hex::encode(&encoded_data));
                 
-                // 3. Real EVM RPC Broadcast via ethers-rs
                 if let Some(ref priv_key) = self.relayer_private_key {
-                    info!("Connecting to EVM RPC provider: {}", self.rpc_url);
-                    if let Ok(provider) = Provider::<Http>::try_from(self.rpc_url.as_str()) {
-                        if let Ok(wallet) = priv_key.parse::<LocalWallet>() {
-                            // Assume chain ID 1 for mainnet or fetch dynamically
-                            let client = SignerMiddleware::new(provider, wallet.with_chain_id(1u64));
-                            let client = Arc::new(client);
-
-                            // The deployed address of the ZeroDexEscrow contract
-                            let escrow_address = "0x0000000000000000000000000000000000000000".parse::<Address>().unwrap();
-                            
-                            let tx = TransactionRequest::new()
-                                .to(escrow_address)
-                                .data(encoded_data.clone());
-                            
-                            info!("Submitting atomic swap transaction to the blockchain...");
-                            match client.send_transaction(tx, None).await {
-                                Ok(pending_tx) => {
-                                    info!("✅ Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
-                                    // Wait for confirmation
-                                    if let Ok(Some(receipt)) = pending_tx.await {
-                                        info!("✅ Trade Settled On-Chain in block {}! Vector: {:?}", receipt.block_number.unwrap_or_default(), proof.settled_vector);
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Failed to broadcast transaction: {}", e);
-                                }
-                            }
-                        } else {
-                            error!("Invalid relayer private key format");
-                        }
-                    } else {
-                        error!("Failed to connect to RPC provider");
-                    }
+                    self.broadcast_evm(&encoded_data, &proof, priv_key).await;
                 } else {
-                    // Fallback mock if no key is configured
                     info!("No relayer key configured. Simulating RPC submission...");
                     tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-                    info!("✅ Trade Settled (Simulated)! Vector: {:?}", proof.settled_vector);
+                    info!("Trade Settled (Simulated)! Vector: {:?}", proof.settled_vector);
                 }
             },
             Err(e) => {
                 error!("Failed to encode ABI payload for settlement: {}", e);
             }
         }
+    }
+
+    async fn broadcast_evm(&self, encoded_data: &[u8], proof: &MatchProof, priv_key: &str) {
+        info!("Connecting to EVM RPC provider: {}", self.rpc_url);
+        let provider = match Provider::<Http>::try_from(self.rpc_url.as_str()) {
+            Ok(p) => p,
+            Err(e) => { error!("Failed to connect to RPC provider: {}", e); return; }
+        };
+        let wallet = match priv_key.parse::<LocalWallet>() {
+            Ok(w) => w.with_chain_id(1u64),
+            Err(e) => { error!("Invalid relayer private key: {}", e); return; }
+        };
+        let client = SignerMiddleware::new(provider, wallet);
+
+        let escrow_address: Address = std::env::var("ZERO_DEX_ESCROW_ADDRESS")
+            .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string())
+            .parse()
+            .expect("valid escrow address");
+
+        let tx = TransactionRequest::new()
+            .to(escrow_address)
+            .data(encoded_data.to_vec());
+
+        info!("Submitting atomic swap transaction...");
+        match client.send_transaction(tx, None).await {
+            Ok(pending_tx) => {
+                info!("Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
+                if let Ok(Some(receipt)) = pending_tx.await {
+                    info!(
+                        "Trade settled on-chain in block {}! Vector: {:?}",
+                        receipt.block_number.unwrap_or_default(),
+                        proof.settled_vector
+                    );
+                }
+            }
+            Err(e) => error!("Failed to broadcast transaction: {}", e),
+        };
     }
 }

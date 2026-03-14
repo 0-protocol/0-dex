@@ -1,7 +1,17 @@
 import requests
 import json
 from eth_account import Account
-from eth_account.messages import encode_defunct
+from eth_account._utils.signing import sign_message_hash
+
+try:
+    from eth_utils import keccak
+except ImportError:
+    from Crypto.Hash import keccak as _keccak
+    def keccak(primitive: bytes) -> bytes:
+        k = _keccak.new(digest_bits=256)
+        k.update(primitive)
+        return k.digest()
+
 
 class LiteClient:
     """
@@ -14,20 +24,25 @@ class LiteClient:
 
     def _sign_intent(self, graph_content: str) -> dict:
         """
-        Cryptographically ties the 0-lang graph to the Agent's wallet.
-        Matches the \x190-dex Intent:\n length prefix hashing required by the Rust node.
+        Signs the graph with the exact hashing scheme the Rust node expects:
+          keccak256("\\x190-dex Intent:\\n" + str(len(graph_content)) + graph_content)
+        No additional Ethereum signed-message wrapping.
         """
         prefix = f"\x190-dex Intent:\n{len(graph_content)}"
-        payload = prefix + graph_content
-        
-        # We use encode_defunct to hash the raw string
-        message = encode_defunct(text=payload)
-        signed_message = self.account.sign_message(message)
-        
+        raw = (prefix + graph_content).encode("utf-8")
+        msg_hash = keccak(primitive=raw)
+
+        sig_obj = sign_message_hash(self.account.key, msg_hash)
+        # sig_obj has .v, .r, .s — pack into 65-byte [r(32) || s(32) || v(1)]
+        r_bytes = sig_obj.r.to_bytes(32, "big")
+        s_bytes = sig_obj.s.to_bytes(32, "big")
+        v_byte = sig_obj.v.to_bytes(1, "big")
+        signature_hex = (r_bytes + s_bytes + v_byte).hex()
+
         return {
             "graph_content": graph_content,
             "owner_address": self.account.address,
-            "signature_hex": signed_message.signature.hex()
+            "signature_hex": signature_hex,
         }
 
     def broadcast_intent(self, graph_content: str) -> dict:

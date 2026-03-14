@@ -3,7 +3,6 @@
 //! Binds 0-lang intent graphs to on-chain identities (EVM wallets via secp256k1).
 
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
-use k256::ecdsa::signature::Verifier;
 use sha3::{Digest, Keccak256};
 use serde::{Deserialize, Serialize};
 

@@ -1,0 +1,115 @@
+# 0-dex Development Plan
+
+## Codebase Assessment
+
+**0-dex** is an agent-native decentralized exchange where AI agents trade directly via P2P gossip + 0-lang tensor graph intersections. Status: **early devnet / skeleton**.
+
+### What Exists (Working Skeletons)
+- [x] Rust node scaffold (`main.rs` wires subsystems via Tokio channels)
+- [x] libp2p Gossipsub + mDNS peer discovery (`network.rs`)
+- [x] REST/HTTP bridge: `GET /health`, `POST /intent` via Axum (`api.rs`)
+- [x] Matching engine skeleton with 0-lang VM integration (`matching.rs`)
+- [x] Sandboxed VM execution with timeout (`vm_bridge.rs`)
+- [x] secp256k1 signature verification, EIP-191-style hashing (`crypto.rs`)
+- [x] EVM ABI encoding for `executeSwap` params (`abi.rs`)
+- [x] Settlement engine with ethers-rs RPC + mock fallback (`settlement.rs`)
+- [x] EVM escrow contract skeleton (`ZeroDexEscrow.sol`)
+- [x] Solana Anchor escrow skeleton (`programs/zero_dex_escrow`)
+- [x] Python SDK: `LiteClient`, `create_limit_order` generator
+- [x] Example `.0` graph files (`limit.0`, `amm.0`)
+
+### Critical Bugs & Gaps (Must Fix)
+
+1. **Gossip → API broadcast is broken**: `GossipNode::run()` only reads swarm events. The `gossip_tx` channel from `api.rs` feeds into a receiver that `GossipNode` never reads — intents submitted via REST are silently dropped.
+2. **Matching engine is disconnected**: In `main.rs:74-77`, the actual `RuntimeGraph` parsing and `evaluate_counterparty()` call are commented out. No matching actually happens.
+3. **ABI encoding is missing function selector**: `abi.rs` encodes params via `ethabi::encode()` but omits the 4-byte `executeSwap(...)` function selector — EVM calls would fail.
+4. **EVM contract has no signature verification**: `ZeroDexEscrow.sol:52-53` has `_verifySignature` calls commented out. No EIP-712 domain separator defined. Anyone can call `executeSwap`.
+5. **Solana program has no Ed25519 verification**: `lib.rs:27-28` has Ed25519 sysvar check commented out. Match proof hash is ignored.
+6. **Python SDK signature mismatch**: `client.py` uses `encode_defunct(text=payload)` which adds Ethereum's `\x19Ethereum Signed Message:\n` prefix on top of the custom `\x190-dex Intent:\n` prefix — double-prefixed, won't verify on the Rust side.
+7. **`main.rs` ownership bug**: `gossip_tx` is moved into the gossip node spawn (line 36), then cloned for the API server (line 54) — this won't compile as-is because the move happens first.
+
+---
+
+## Plan: Priority-Ordered Workstreams
+
+### P0 — Wire the Core Loop (Make It Actually Work End-to-End)
+
+- [x] **P0.1** Fix `GossipNode` to use `tokio::select!` for concurrent swarm + outbound channel processing
+- [x] **P0.2** Fix `main.rs` ownership: clone `outbound_tx` before moving `gossip_node`
+- [x] **P0.3** Wire `RuntimeGraph::from_reader` + `evaluate_counterparty` in the main intent loop
+- [x] **P0.4** Add 4-byte function selector + `signatureA`/`signatureB` params to `abi.rs`
+- [x] **P0.5** Fix Python SDK signing: raw Keccak256 without `encode_defunct` double-wrapping
+- [x] **P0.6** `MatchProof` now carries both `local_signature` and `counterparty_signature`
+- [x] **P0.7** Verified: `cargo check` passes (0 errors, 2 benign dead-code warnings)
+- [ ] **P0.8** Write an integration smoke test: 2 nodes discover each other, one broadcasts a limit order, the other matches against an AMM pool, settlement engine receives a `MatchProof`
+
+### P1 — Smart Contract Hardening (From Skeleton to Secure)
+
+- [ ] **P1.1** EVM: Implement EIP-712 typed data signatures in `ZeroDexEscrow.sol` (domain separator, struct hash, `ecrecover`)
+- [ ] **P1.2** EVM: Add reentrancy guard (`ReentrancyGuard` or CEI pattern), nonce tracking to prevent replay
+- [ ] **P1.3** EVM: Add chain ID binding and deployed-address binding per EIP-712
+- [ ] **P1.4** Solana: Implement Ed25519 instruction sysvar verification in `execute_swap`
+- [ ] **P1.5** Solana: Add PDA vaults for escrowed collateral instead of direct `transferFrom`
+- [ ] **P1.6** Solana: Add strict token account ownership & mint validation
+- [ ] **P1.7** Update `abi.rs` to include `signatureA`/`signatureB` in the encoded calldata (matches the Solidity function signature)
+
+### P2 — Matching Engine Maturity
+
+- [ ] **P2.1** Real intersection math: replace the placeholder `confidence > 0.8` check with proper multi-dimensional tensor overlap (price bounds, amounts, token IDs)
+- [ ] **P2.2** Partial fills: allow graphs to match on a subset of the requested amount
+- [ ] **P2.3** Inject local wallet identity into `MatchProof.local_intent_id` (currently hardcoded `"local_id"`)
+- [ ] **P2.4** Graph loading: on startup, load all `.0` files from `graphs/intents/` and `graphs/pools/` as local intents
+- [ ] **P2.5** Hot-reload: watch the `graphs/` directory and register new intents without restart
+
+### P3 — Network Robustness
+
+- [ ] **P3.1** Make `GossipNode::run()` use `tokio::select!` to concurrently process swarm events AND outbound publish requests
+- [ ] **P3.2** Add configurable CLI args: `--http-port`, `--listen-addr`, `--bootstrap-peers`, `--graphs-dir`
+- [ ] **P3.3** Add WebSocket-to-libp2p gateway mode for lightweight browser/Python agents
+- [ ] **P3.4** Implement peer scoring / rate limiting to prevent gossip spam
+- [ ] **P3.5** Add metrics endpoint (Prometheus) for monitoring intent throughput, match rate, settlement latency
+
+### P4 — Production Settlement
+
+- [ ] **P4.1** Extract real token addresses and amounts from the settled `Tensor` instead of hardcoded WETH/USDC
+- [ ] **P4.2** Support configurable chain: mainnet, testnet, devnet via env vars / config file
+- [ ] **P4.3** Implement Solana settlement path (currently only EVM is wired)
+- [ ] **P4.4** Add retry logic and gas estimation for failed transactions
+- [ ] **P4.5** Integrate with Flashbots (EVM) / Jito (Solana) for MEV protection
+
+### P5 — Solver Architecture
+
+- [ ] **P5.1** Define Solver node role: aggregates intents, computes multi-way intersections
+- [ ] **P5.2** Implement libp2p topic sharding: `0-dex-intents` vs `0-dex-solutions`
+- [ ] **P5.3** Add nonce management and state-locking so a graph can be marked "exhausted" after matching
+- [ ] **P5.4** AMM bridge graphs: write `uniswap_bridge.0` and `raydium_bridge.0` for liquidity bootstrapping
+- [ ] **P5.5** `LiquidityRelayer` module for routing trades through on-chain AMMs as fallback
+
+### P6 — 0-lang Extensions (Upstream PRs Needed)
+
+- [ ] **P6.1** `Op::OracleRead` — native Pyth/Chainlink price feed ingestion in the VM
+- [ ] **P6.2** `Op::VerifyPythPrice` — Ed25519/secp256k1 signature verification on oracle data
+- [ ] **P6.3** `Op::GetGasPrice` — halt graph if network fees exceed threshold
+- [ ] **P6.4** `Op::SentimentScore` — lightweight NLP for reactive intents
+- [ ] **P6.5** Nonce/state-lock opcodes for preventing double-spend at the graph level
+
+### P7 — Privacy Layer (Future)
+
+- [ ] **P7.1** Pluggable privacy interface in the matching engine
+- [ ] **P7.2** TEE plugin (Intel SGX / AWS Nitro) for encrypted graph evaluation
+- [ ] **P7.3** ZK plugin (Risc0/SP1) for broadcasting proofs instead of graphs
+- [ ] **P7.4** FHE exploration for homomorphic intersection
+
+---
+
+## Recommended Execution Order
+
+```
+P0 (wire core loop)  →  P1 (contracts)  →  P2 (matching)
+        ↓                                       ↓
+   P3 (network)  →  P4 (settlement)  →  P5 (solvers)
+                                              ↓
+                                    P6 (0-lang)  →  P7 (privacy)
+```
+
+**Immediate next step**: P0 — make the node actually work end-to-end on devnet. Everything else is building on sand until the core gossip → match → settle loop is functional.
