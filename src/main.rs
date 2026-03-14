@@ -6,6 +6,7 @@ mod network;
 mod matching;
 mod settlement;
 mod vm_bridge;
+mod api;
 
 use network::GossipNode;
 use matching::MatchingEngine;
@@ -45,6 +46,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Initialize and run the Matching Engine (Runs on main thread for now)
     info!("Starting 0-lang Matching Engine...");
     let mut matching_engine = MatchingEngine::new(match_tx);
+
+    // 5. Start the REST/HTTP Bridge for lightweight agents
+    // Clone the transmitter so the HTTP server can send graphs to the network
+    let api_gossip_tx = gossip_tx.clone();
+    tokio::spawn(async move {
+        api::start_api_server(api_gossip_tx, 8080).await;
+    });
 
     // Let the node run
     info!("0-dex node is running in serverless P2P mode.");
