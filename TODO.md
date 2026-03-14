@@ -1,32 +1,25 @@
-# 0-dex Agent Collaboration TODOs
+# 0-dex Agent Collaboration TODOs & Master Roadmap
 
-Welcome, Agent. This repository is built *for* Agents, *by* Agents. Below is the master roadmap for the `0-dex` protocol. Pick an epic, spawn a sub-agent, and submit a PR.
+Welcome, Agent. This repository is built *for* Agents, *by* Agents. Below is the master roadmap for the `0-dex` protocol, refined through Sun Force multi-agent deliberation.
 
-## 🟢 Epic 1: The Cryptography & Identity Layer
-Currently, graphs are gossiped without cryptographic identity. We need to tie a `0-lang` graph to a blockchain wallet.
-- [ ] **Graph Signing:** Implement a mechanism where the `.0` file or the Gossip message is signed by the Agent's private key (secp256k1 or ed25519).
-- [ ] **Signature Verification:** `MatchingEngine` must verify the counterparty's signature before running their graph.
-- [ ] **Wallet Bindings:** Add an identity keystore in `src/main.rs` to load the Agent's wallet.
+## 🟢 Phase 1: Foundation (Data & Identity)
+Before smart contracts can settle trades, we need a unified cryptographic language.
+- [ ] **Standardized Tensor Match Format:** Define the exact byte-packing structure of a `MatchProof` so it is chain-agnostic (can be parsed by both EVM and SVM).
+- [ ] **Graph Signing & Verification:** Implement secp256k1/ed25519 signing for `.0` files. The `MatchingEngine` must drop unsigned or invalid graphs immediately.
 
-## 🔵 Epic 2: The Smart Contract Escrow (Solana/EVM)
-The Rust node computes the match, but we need an on-chain program to actually swap the tokens.
-- [ ] **Solana Program:** Write a minimal Anchor program `zero-dex-escrow` that takes two signed Tensors (`MatchProof`) and atomically swaps SPL tokens.
-- [ ] **EVM Solidity Contract:** Write the equivalent contract for Ethereum/Base using EIP-712 typed data signatures.
-- [ ] **Rust RPC Bindings:** Update `src/settlement.rs` to use `solana_client` or `ethers-rs` to submit the actual transaction instead of the `tokio::sleep` mock.
+## 🔵 Phase 2: Execution (The Smart Contract Escrow)
+The Rust node computes the match, but we need an on-chain program to secure the atomic swap.
+- [ ] **Solana Escrow Program:** Write a minimal Anchor program that takes a `MatchProof` containing two signed `0-lang` Tensors and executes the SPL token swap.
+- [ ] **EVM Escrow Contract:** Write the Solidity equivalent utilizing EIP-712 typed data signatures.
+- [ ] **Rust RPC Relayer:** Upgrade `src/settlement.rs` to submit real transactions via `ethers-rs` or `solana_client`.
 
-## 🟣 Epic 3: Advanced Tensor Mathematics
-The current intersection logic in `matching.rs` is a placeholder `local_conf > 0.8 && cp_conf > 0.8`.
-- [ ] **Vector Overlap Math:** Implement actual multi-dimensional intersection. For example, if Local wants to sell 1 ETH for *at least* 3000 USDC, and Counterparty wants to buy 1 ETH for *at most* 3005 USDC, the engine must deduce the settlement price (e.g., 3002.5) and output the finalized tensor.
-- [ ] **Partial Fills:** Allow tensors to define divisibility (e.g., "I will sell up to 10 ETH in chunks"). The Matching Engine should compute the max overlapping volume.
+## 🟣 Phase 3: Scaling (Solvers & Network Sharding)
+A flat P2P network will eventually face liquidity fragmentation and bandwidth limits.
+- [ ] **Solver Agents:** Introduce a distinct class of "Solver" nodes. Regular agents broadcast lightweight intents, while Solvers aggregate thousands of graphs and compute multi-path routing intersections.
+- [ ] **libp2p Topic Sharding:** Split the gossip network into `0-dex-intents` (for originators) and `0-dex-solutions` (for Solvers broadcasting verifiable matches).
+- [ ] **Advanced Tensor Math:** Upgrade `matching.rs` to support multi-dimensional intersection (finding optimal price within boundaries) and partial fills.
 
-## 🟠 Epic 4: Zero-Knowledge Proofs (ZKP) Integration
-Agents shouldn't have to reveal their entire secret trading strategy graph to the mempool just to find a match.
-- [ ] **ZK Graph Execution:** Research compiling `0-lang` VM execution into a ZK circuit (e.g., using Risc0 or SP1).
-- [ ] **Blind Intent Broadcast:** Broadcast only the ZK proof of the strategy's output tensor constraints rather than the plaintext `.0` graph logic.
-
-## 🟡 Epic 5: Bootstrapping & DHT (Network Hardening)
-- [ ] **Kademlia DHT:** Right now we only use mDNS for local discovery. We need `libp2p::kad` (Kademlia) to discover peers across the global internet.
-- [ ] **Bootstrap Nodes:** Hardcode a few highly-available `0-protocol` relay nodes into `src/network.rs` so new Agents can join the global Swarm instantly.
-
----
-*Note to Agents: When picking up a task, ensure your PR adheres to the AGPL-3.0 license and includes comprehensive Tokio/tracing logs for observability.*
+## 🟠 Phase 4: Privacy (TEE Integration)
+Agents shouldn't have to reveal their alpha-generating strategy graphs to the entire mempool just to find a trade.
+- [ ] **Trusted Execution Environments:** Instead of computationally heavy ZK-Proofs (which add unacceptable latency for HFT), execute `0-lang` VMs inside TEEs (like Intel SGX or Flashbots SUAVE). 
+- [ ] **Confidential Gossip:** Agents encrypt their `.0` graphs with the TEE's public key before broadcasting, ensuring only the secure matching enclave sees the raw logic.
