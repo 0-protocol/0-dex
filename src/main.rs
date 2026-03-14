@@ -105,7 +105,7 @@ async fn run_agent_loop(
                 match zerolang::RuntimeGraph::from_reader(payload.graph_content.as_bytes()) {
                     Ok(graph) => {
                         matching_engine.evaluate_counterparty(
-                            graph,
+                            &payload.graph_content,
                             &payload.owner_address,
                             &payload.signature_hex,
                         ).await;
