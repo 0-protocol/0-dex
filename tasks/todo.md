@@ -79,11 +79,13 @@
 
 ### P5 — Solver Architecture
 
-- [ ] **P5.1** Define Solver node role: aggregates intents, computes multi-way intersections
-- [ ] **P5.2** Implement libp2p topic sharding: `0-dex-intents` vs `0-dex-solutions`
-- [ ] **P5.3** Add nonce management and state-locking so a graph can be marked "exhausted" after matching
-- [ ] **P5.4** AMM bridge graphs: write `uniswap_bridge.0` and `raydium_bridge.0` for liquidity bootstrapping
-- [ ] **P5.5** `LiquidityRelayer` module for routing trades through on-chain AMMs as fallback
+- [x] **P5.1** Define Solver node role: `--mode solver` CLI flag, `NodeMode` enum, branching main loop
+- [x] **P5.2** Implement libp2p topic sharding: `0-dex-intents` vs `0-dex-solutions` + legacy `0-dex-mempool`
+- [x] **P5.3** Intent pool with TTL, dedup, status tracking (Active/Matched/Expired/Exhausted)
+- [x] **P5.4** CoW solver engine: directed swap graph, DFS cycle detection, multi-way settlement
+- [x] **P5.5** Flashbots (EVM) / Jito (Solana) bundle submission in settlement engine
+- [x] **P5.6** AMM bridge graphs: `uniswap_bridge.0`, `raydium_bridge.0`
+- [x] **P5.7** `LiquidityRelayer` module for routing stale intents through on-chain AMMs
 
 ### P6 — 0-lang Extensions (Upstream PRs Needed)
 
@@ -93,12 +95,14 @@
 - [ ] **P6.4** `Op::SentimentScore` — lightweight NLP for reactive intents
 - [ ] **P6.5** Nonce/state-lock opcodes for preventing double-spend at the graph level
 
-### P7 — Privacy Layer (Future)
+### P7 — Privacy Layer
 
-- [ ] **P7.1** Pluggable privacy interface in the matching engine
-- [ ] **P7.2** TEE plugin (Intel SGX / AWS Nitro) for encrypted graph evaluation
-- [ ] **P7.3** ZK plugin (Risc0/SP1) for broadcasting proofs instead of graphs
-- [ ] **P7.4** FHE exploration for homomorphic intersection
+- [x] **P7.1** `PrivacyPlugin` trait: `wrap_intent()`, `unwrap_intent()`, `verify()` with `UnwrappedIntent` enum
+- [x] **P7.2** Naked plugin (default, zero-overhead pass-through)
+- [x] **P7.3** TEE plugin: X25519 + ChaCha20-Poly1305 AEAD encryption, env-based key config
+- [x] **P7.4** ZK plugin: Risc0-style proof envelope with public output extraction (placeholder prover)
+- [x] **P7.5** FHE stub: trait impl with documented research direction
+- [x] **P7.6** Privacy wired into main.rs (both agent/solver loops), api.rs, and CLI (`--privacy naked|tee|zk`)
 
 ---
 
@@ -112,4 +116,4 @@ P0 (wire core loop)  →  P1 (contracts)  →  P2 (matching)
                                     P6 (0-lang)  →  P7 (privacy)
 ```
 
-**Immediate next step**: P0 — make the node actually work end-to-end on devnet. Everything else is building on sand until the core gossip → match → settle loop is functional.
+**Current status**: P0 (core loop), P5 (solvers), and P7 (privacy) are implemented. Remaining: P1 (contract hardening), P2 (matching maturity), P3 (network robustness), P4 (production settlement), P6 (0-lang extensions).

@@ -1,0 +1,28 @@
+# 0-lang Bridge Intent: Uniswap V3 (EVM)
+#
+# This graph acts as a market maker of last resort. When no P2P counterparty
+# is found, intents can be matched against this bridge which routes the trade
+# through Uniswap V3 on-chain.
+#
+# The LiquidityRelayer module handles the actual smart contract call.
+
+def bridge_type: "uniswap_v3"
+def chain: "evm"
+def router_address: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+def fee_tier: 3000
+def slippage_bps: 50
+
+node AcceptAnyPair {
+  op: Identity
+  inputs: [Incoming.TokenIn, Incoming.TokenOut, Incoming.AmountIn]
+}
+
+node CalculateMinOut {
+  op: Mul
+  inputs: [Incoming.AmountIn, 0.995]
+}
+
+node BridgeSwap {
+  op: ExternalSwap
+  inputs: [AcceptAnyPair.Output, CalculateMinOut.Output, router_address, fee_tier]
+}

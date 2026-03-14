@@ -1,0 +1,24 @@
+# 0-lang Bridge Intent: Raydium (Solana)
+#
+# Solana equivalent of the Uniswap bridge. Routes unmatched intents
+# through Raydium's CLMM (Concentrated Liquidity Market Maker) pools.
+
+def bridge_type: "raydium_clmm"
+def chain: "solana"
+def program_id: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"
+def slippage_bps: 50
+
+node AcceptAnyPair {
+  op: Identity
+  inputs: [Incoming.MintIn, Incoming.MintOut, Incoming.AmountIn]
+}
+
+node CalculateMinOut {
+  op: Mul
+  inputs: [Incoming.AmountIn, 0.995]
+}
+
+node BridgeSwap {
+  op: ExternalSwap
+  inputs: [AcceptAnyPair.Output, CalculateMinOut.Output, program_id]
+}

@@ -1,7 +1,8 @@
-//! REST/HTTP Bridge for 0-dex
-//! 
+//! REST/HTTP Bridge for 0-dex.
+//!
 //! Allows lightweight agents (Python/TS) to interact with the 0-dex node
-//! via simple HTTP requests without needing to implement libp2p or 0-lang locally.
+//! via simple HTTP requests. Intents are wrapped through the privacy plugin
+//! before being published to the gossip network.
 
 use axum::{
     routing::{post, get},
@@ -12,10 +13,14 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use crate::privacy::PrivacyPlugin;
+use crate::crypto::SignedIntent;
+
 #[derive(Deserialize)]
 pub struct IntentRequest {
-    /// The raw .0 graph content as a string
     pub graph_content: String,
+    pub owner_address: Option<String>,
+    pub signature_hex: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -26,11 +31,16 @@ pub struct IntentResponse {
 
 pub struct ApiState {
     pub gossip_tx: mpsc::Sender<Vec<u8>>,
+    pub privacy: Box<dyn PrivacyPlugin>,
 }
 
-/// Start the REST API server
-pub async fn start_api_server(gossip_tx: mpsc::Sender<Vec<u8>>, port: u16) {
-    let state = Arc::new(ApiState { gossip_tx });
+pub async fn start_api_server(
+    gossip_tx: mpsc::Sender<Vec<u8>>,
+    port: u16,
+    privacy: Box<dyn PrivacyPlugin>,
+) {
+    let state = Arc::new(ApiState { gossip_tx, privacy });
+    let privacy_name = state.privacy.name();
 
     let app = Router::new()
         .route("/health", get(health_check))
@@ -38,8 +48,8 @@ pub async fn start_api_server(gossip_tx: mpsc::Sender<Vec<u8>>, port: u16) {
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
-    info!("Starting REST/HTTP Bridge on http://{}", addr);
-    
+    info!("REST/HTTP Bridge on http://{} (privacy={})", addr, privacy_name);
+
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -52,23 +62,31 @@ async fn submit_intent(
     State(state): State<Arc<ApiState>>,
     Json(payload): Json<IntentRequest>,
 ) -> Result<Json<IntentResponse>, (StatusCode, String)> {
-    let graph_bytes = payload.graph_content.into_bytes();
-    
-    // Send to the gossip network to be broadcasted
-    match state.gossip_tx.send(graph_bytes).await {
+    // If the request includes signing data, wrap through privacy plugin
+    let bytes = if let (Some(addr), Some(sig)) = (&payload.owner_address, &payload.signature_hex) {
+        let signed = SignedIntent {
+            graph_content: payload.graph_content,
+            owner_address: addr.clone(),
+            signature_hex: sig.clone(),
+        };
+        state.privacy.wrap_intent(&signed)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Privacy wrap failed: {}", e)))?
+    } else {
+        // Raw graph content (unsigned) — pass through as bytes
+        payload.graph_content.into_bytes()
+    };
+
+    match state.gossip_tx.send(bytes).await {
         Ok(_) => {
-            info!("Successfully ingested external intent via REST API");
+            info!("Ingested intent via REST API (privacy={})", state.privacy.name());
             Ok(Json(IntentResponse {
                 status: "success".to_string(),
-                message: "Intent broadcasted to 0-dex mempool".to_string(),
+                message: "Intent broadcasted to 0-dex network".to_string(),
             }))
         }
         Err(e) => {
-            tracing::error!("Failed to broadcast intent: {}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to broadcast intent".to_string(),
-            ))
+            tracing::error!("Failed to broadcast: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Broadcast failed".to_string()))
         }
     }
 }

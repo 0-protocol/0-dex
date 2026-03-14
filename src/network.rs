@@ -1,19 +1,28 @@
-//! P2P Gossip Network for distributing 0-lang graphs
-//! 
-//! Agents use this to broadcast their intents without a centralized orderbook.
+//! P2P Gossip Network for distributing 0-lang graphs.
+//!
+//! Supports topic sharding:
+//!   - `0-dex-intents`   — agents publish raw signed intents
+//!   - `0-dex-solutions` — solvers publish verified MatchProof bundles
+//!   - `0-dex-mempool`   — legacy single-topic mode (subscribed by all for backward compat)
 
 use libp2p::{
     futures::StreamExt,
     gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, Swarm,
-    identity, PeerId, Multiaddr
+    identity, PeerId, Multiaddr,
 };
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-// Define the custom behaviour combining Gossipsub (for messaging) and mDNS (for local peer discovery)
+use crate::node_mode::NodeMode;
+
+pub const TOPIC_INTENTS: &str = "0-dex-intents";
+pub const TOPIC_SOLUTIONS: &str = "0-dex-solutions";
+pub const TOPIC_MEMPOOL: &str = "0-dex-mempool";
+
 #[derive(NetworkBehaviour)]
 pub struct DexBehaviour {
     pub gossipsub: gossipsub::Behaviour,
@@ -22,16 +31,15 @@ pub struct DexBehaviour {
 
 pub struct GossipNode {
     swarm: Swarm<DexBehaviour>,
-    topic: gossipsub::IdentTopic,
+    topics: HashMap<String, gossipsub::IdentTopic>,
+    /// Default publish topic based on node mode
+    publish_topic_name: String,
     outbound_rx: mpsc::Receiver<Vec<u8>>,
     inbound_tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl GossipNode {
-    /// Returns `(node, outbound_tx, inbound_rx)`.
-    ///   - Write to `outbound_tx` to publish payloads onto gossip.
-    ///   - Read from `inbound_rx` to consume messages received from the network.
-    pub fn new() -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>> {
+    pub fn new(mode: NodeMode) -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>> {
         let id_keys = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(id_keys.public());
         info!("0-dex local peer id: {peer_id}");
@@ -75,10 +83,37 @@ impl GossipNode {
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
-        let topic = gossipsub::IdentTopic::new("0-dex-mempool");
-        swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
+        let mut topics = HashMap::new();
+        for name in [TOPIC_INTENTS, TOPIC_SOLUTIONS, TOPIC_MEMPOOL] {
+            let topic = gossipsub::IdentTopic::new(name);
+            topics.insert(name.to_string(), topic);
+        }
 
-        Ok((Self { swarm, topic, outbound_rx, inbound_tx }, outbound_tx, inbound_rx))
+        // Subscribe based on node mode
+        let publish_topic_name = match mode {
+            NodeMode::Agent => {
+                // Agent listens on solutions + legacy mempool, publishes to intents
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_SOLUTIONS])?;
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_MEMPOOL])?;
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_INTENTS])?;
+                TOPIC_INTENTS.to_string()
+            }
+            NodeMode::Solver => {
+                // Solver listens on intents + legacy mempool, publishes to solutions
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_INTENTS])?;
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_MEMPOOL])?;
+                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_SOLUTIONS])?;
+                TOPIC_SOLUTIONS.to_string()
+            }
+        };
+
+        info!("Subscribed to gossip topics (mode={mode}), default publish topic: {publish_topic_name}");
+
+        Ok((
+            Self { swarm, topics, publish_topic_name, outbound_rx, inbound_tx },
+            outbound_tx,
+            inbound_rx,
+        ))
     }
 
     pub fn listen_on(&mut self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -87,11 +122,6 @@ impl GossipNode {
         Ok(())
     }
 
-    /// Run the network loop. This must be spawned in a Tokio task.
-    ///
-    /// Concurrently processes:
-    ///   - Inbound swarm events (peer discovery, gossip messages)
-    ///   - Outbound publish requests from the API / other subsystems
     pub async fn run(mut self) {
         loop {
             tokio::select! {
@@ -99,13 +129,12 @@ impl GossipNode {
                     match event {
                         SwarmEvent::Behaviour(DexBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                             for (peer_id, multiaddr) in list {
-                                info!("mDNS discovered a new peer: {peer_id} @ {multiaddr}");
+                                info!("mDNS discovered peer: {peer_id} @ {multiaddr}");
                                 self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                             }
                         }
                         SwarmEvent::Behaviour(DexBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
-                            for (peer_id, _multiaddr) in list {
-                                info!("mDNS discover peer has expired: {peer_id}");
+                            for (peer_id, _) in list {
                                 self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                             }
                         }
@@ -114,7 +143,8 @@ impl GossipNode {
                             message_id: id,
                             message,
                         })) => {
-                            info!("Got intent graph with id: {id} from peer: {peer_id}");
+                            let topic_str = message.topic.as_str();
+                            info!("Got message id={id} from peer={peer_id} topic={topic_str}");
                             let _ = self.inbound_tx.send(message.data).await;
                         }
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -124,8 +154,10 @@ impl GossipNode {
                     }
                 }
                 Some(payload) = self.outbound_rx.recv() => {
-                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(self.topic.clone(), payload) {
-                        warn!("Failed to publish outbound intent to gossip: {:?}", e);
+                    if let Some(topic) = self.topics.get(&self.publish_topic_name) {
+                        if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), payload) {
+                            warn!("Failed to publish to {}: {:?}", self.publish_topic_name, e);
+                        }
                     }
                 }
             }
