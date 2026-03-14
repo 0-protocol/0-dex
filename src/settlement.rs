@@ -19,6 +19,10 @@ pub struct MatchProof {
     pub local_intent_id: String,
     pub counterparty_intent_id: String,
     pub settled_vector: Tensor,
+    pub token_a: String,
+    pub token_b: String,
+    pub amount_a: u64,
+    pub amount_b: u64,
     pub local_signature: Vec<u8>,
     pub counterparty_signature: Vec<u8>,
 }
@@ -162,10 +166,10 @@ impl SettlementEngine {
     }
 
     fn encode_swap_tx(&self, proof: &MatchProof) -> Result<Vec<u8>, String> {
-        let token_a = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-        let token_b = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-        let amount_a = 1_000_000_000_000_000_000u64;
-        let amount_b = 3_000_000_000u64;
+        let token_a = &proof.token_a;
+        let token_b = &proof.token_b;
+        let amount_a = proof.amount_a;
+        let amount_b = proof.amount_b;
 
         crate::abi::encode_match_for_evm(
             &proof.local_intent_id,

@@ -55,6 +55,10 @@ impl LiquidityRelayer {
                 local_intent_id: "amm_bridge".to_string(),
                 counterparty_intent_id: key.clone(),
                 settled_vector: zerolang::Tensor::scalar(0.0, 1.0),
+                token_a: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".to_string(),
+                token_b: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_string(),
+                amount_a: 0,
+                amount_b: 0,
                 local_signature: Vec::new(),
                 counterparty_signature: Vec::new(),
             };

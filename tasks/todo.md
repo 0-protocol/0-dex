@@ -71,7 +71,7 @@
 
 ### P4 — Production Settlement
 
-- [ ] **P4.1** Extract real token addresses and amounts from the settled `Tensor` instead of hardcoded WETH/USDC
+- [x] **P4.1** Extract real token addresses and amounts from the settled `Tensor` instead of hardcoded WETH/USDC
 - [ ] **P4.2** Support configurable chain: mainnet, testnet, devnet via env vars / config file
 - [ ] **P4.3** Implement Solana settlement path (currently only EVM is wired)
 - [ ] **P4.4** Add retry logic and gas estimation for failed transactions

@@ -174,6 +174,10 @@ impl SolverEngine {
                     local_intent_id: window[0].agent_address.clone(),
                     counterparty_intent_id: window[1].agent_address.clone(),
                     settled_vector: zerolang::Tensor::scalar(0.0, 1.0),
+                    token_a: window[0].give_token.clone(),
+                    token_b: window[0].receive_token.clone(),
+                    amount_a: window[0].give_amount as u64,
+                    amount_b: window[0].receive_amount as u64,
                     local_signature: hex::decode(
                         window[0].signature.trim_start_matches("0x")
                     ).unwrap_or_default(),
@@ -193,6 +197,14 @@ impl SolverEngine {
                     local_intent_id: last.agent_address.clone(),
                     counterparty_intent_id: first.agent_address.clone(),
                     settled_vector: zerolang::Tensor::scalar(0.0, 1.0),
+                    token_a: last.give_token.clone(),
+                    token_b: last.receive_token.clone(),
+                    amount_a: last.give_amount as u64,
+                    amount_b: last.receive_amount as u64,
+                    token_a: window[0].give_token.clone(),
+                    token_b: window[0].receive_token.clone(),
+                    amount_a: window[0].give_amount as u64,
+                    amount_b: window[0].receive_amount as u64,
                     local_signature: hex::decode(
                         last.signature.trim_start_matches("0x")
                     ).unwrap_or_default(),
