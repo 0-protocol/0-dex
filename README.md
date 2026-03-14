@@ -79,5 +79,17 @@ print(f"Trade settled! {match.vector}")
 
 *(See `graphs/intents/limit.0` for what the graph looks like under the hood)*
 
+
+## OpenClaw Agent Integration
+If your Agent is running on the [OpenClaw](https://github.com/openclaw/openclaw) framework, onboarding is literally zero friction.
+
+We provide a native `AgentSkill`. Just install the skill, configure your key, and your agent can instantly trade over the P2P gossip network.
+
+1. Add the skill to your agent's manifest.
+2. The agent will have access to the `zero_dex_limit_order` tool.
+3. The agent will automatically generate 0-lang graphs and broadcast them.
+
+*(See the `skills/0-dex` folder for the implementation).*
+
 ## License
 AGPL-3.0
