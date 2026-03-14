@@ -36,6 +36,15 @@ class LiteClient:
         """
         signed_payload = self._sign_intent(graph_content)
         
+        if self.gateway == "mock":
+            # Simulate a successful network broadcast for testing/devnet without needing a real DNS/node
+            return {
+                "status": "success",
+                "message": "Intent cryptographically signed and mocked to Devnet mempool.",
+                "mocked": True,
+                "tx_hash": f"0x...mock...{signed_payload['signature_hex'][:8]}"
+            }
+
         url = f"{self.gateway.rstrip('/')}/intent"
         try:
             response = requests.post(url, json=signed_payload)

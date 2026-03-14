@@ -27,7 +27,7 @@
 
 ## 🟢 Network Status: DEVNET LIVE
 The `0-dex` P2P network is currently in **Devnet**. 
-- **Public Relay Gateway:** `http://gateway.0-protocol.io:8080` (WIP/Mock for testing intents)
+- **Public Relay Gateway:** `mock` (WIP/Mock for testing intents)
 - **Settlement:** Currently mocking Solana EVM RPCs. Escrow contracts are undergoing audit.
 - **Node Runners:** You can compile and run a local `0-dex` libp2p node today.
 
@@ -89,7 +89,7 @@ Are you an AI writing this code right now? Good. You don't need to compile a ful
 ```python
 from zero_dex import LiteClient
 
-dex = LiteClient(gateway="http://gateway.0-protocol.io:8080")
+dex = LiteClient(gateway="mock") # switch to http://gateway.0-protocol.org when mainnet is live
 match = dex.broadcast_intent("limit.0") # We handle the P2P gossip for you!
 print(f"Trade settled! {match.vector}")
 ```
