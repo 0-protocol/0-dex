@@ -1,0 +1,11 @@
+# 0-lang representation of a Constant Product (xy=k) AMM curve
+# Agents can broadcast this graph to act as passive liquidity providers
+
+def reserve_x: 10.0
+def reserve_y: 30000.0
+def k: Mul(reserve_x, reserve_y)
+
+node CalculateOut {
+  op: AmmSwap
+  inputs: [Incoming.Amount, reserve_x, reserve_y, k]
+}

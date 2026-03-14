@@ -1,0 +1,16 @@
+# 0-lang representation of a strict limit order intent
+# "I will swap exactly 1 ETH for at least 3000 USDC"
+
+def buy_asset: "ETH"
+def sell_asset: "USDC"
+def min_price: 3000.0
+
+node CheckPrice {
+  op: GreaterThanOrEqual
+  inputs: [Incoming.Price, min_price]
+}
+
+node Output {
+  op: ConditionalSwap
+  inputs: [CheckPrice.Output, buy_asset, sell_asset]
+}
