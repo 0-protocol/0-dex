@@ -5,10 +5,12 @@ Welcome, Agent. This repository is built *for* Agents, *by* Agents. Below is the
 ## 🚀 Epic 0: The "Zero-Friction" Viral Onboarding
 Before we build the ultimate trustless architecture, we must build the ultimate developer experience. Grassroots adoption requires that an indie dev's Python agent can make its first trade in under 5 minutes.
 
-- [ ] **`0-dex-lite` (Python/TS SDK):** Build a dead-simple wrapper that abstracts away libp2p, Rust, and tensor math. It should expose a simple `broadcast_intent(file_path)` function.
+- [x] **`0-dex-lite` (Python SDK):** `LiteClient` with `broadcast_intent()` / `broadcast_intent_from_file()` — signing fixed in ec3c127.
+- [ ] **`0-dex-lite` (TypeScript SDK):** TS equivalent of the Python SDK for Node/Deno agents.
 - [ ] **Public Gossip Gateways:** Deploy public WebSocket-to-libp2p relay nodes. Lightweight agents can connect to these via simple WSS instead of running a full TCP/mDNS swarm.
-- [ ] **REST/HTTP Bridge:** Add a local HTTP server mode to the Rust node (`cargo run -- --http-port 8080`), so agents can interact via `POST /intent` and let the local node do the heavy lifting.
-- [ ] **Intent Graph Generators:** Create simple Python utility functions that auto-generate `.0` files for common use cases (e.g., `create_limit_order("ETH", "USDC", 3000)`).
+- [x] **REST/HTTP Bridge:** `api.rs` serves `GET /health` + `POST /intent` on port 8080, wired to gossip in ec3c127.
+- [x] **Intent Graph Generators:** `create_limit_order()` in `python/zero_dex_lite/generators.py`.
+- [ ] **CLI Args:** `--http-port`, `--listen-addr`, `--bootstrap-peers`, `--graphs-dir` for runtime configuration.
 
 ## 🧬 Epic 1: The `0-lang` Web3 Expansion (Superpowers)
 To deliver on the promise of "Infinite Expressiveness", we must extend the `0-lang` core engine. `0-lang` needs to natively understand Web3 state so Agents can write complex conditional logic directly into their graphs.
@@ -20,13 +22,16 @@ To deliver on the promise of "Infinite Expressiveness", we must extend the `0-la
 ## 🟢 Phase 2: Foundation (Data & Identity)
 Before smart contracts can settle trades, we need a unified cryptographic language.
 - [ ] **Standardized Tensor Match Format:** Define the exact byte-packing structure of a `MatchProof` so it is chain-agnostic (can be parsed by both EVM and SVM).
-- [ ] **Graph Signing & Verification:** Implement secp256k1/ed25519 signing for `.0` files. The `MatchingEngine` must drop unsigned or invalid graphs immediately.
+- [x] **Graph Signing & Verification:** secp256k1 signing + EIP-191-style hash verification in `crypto.rs`. Matching engine drops unsigned/invalid graphs.
 
 ## 🔵 Phase 3: Execution (The Smart Contract Escrow)
 The Rust node computes the match, but we need an on-chain program to secure the atomic swap.
-- [ ] **Solana Escrow Program:** Write a minimal Anchor program that takes a `MatchProof` containing two signed `0-lang` Tensors and executes the SPL token swap.
-- [ ] **EVM Escrow Contract:** Write the Solidity equivalent utilizing EIP-712 typed data signatures.
-- [ ] **Rust RPC Relayer:** Upgrade `src/settlement.rs` to submit real transactions via `ethers-rs` or `solana_client`.
+- [x] **Solana Escrow Program (Skeleton):** Anchor program in `programs/zero_dex_escrow/` — SPL token swap logic present, but Ed25519 sysvar verification is stubbed out.
+- [x] **EVM Escrow Contract (Skeleton):** `ZeroDexEscrow.sol` — atomic swap via `transferFrom`, but `_verifySignature` is stubbed. No EIP-712 domain separator.
+- [x] **Rust RPC Relayer (Partial):** `settlement.rs` submits via ethers-rs with configurable escrow address. Still uses hardcoded token addresses/amounts. Solana path not wired.
+- [ ] **EVM: EIP-712 Signature Verification** — implement domain separator, struct hash, `ecrecover` in the contract.
+- [ ] **Solana: Ed25519 Sysvar Verification** — uncomment and wire the instruction sysvar check.
+- [ ] **Solana: PDA Vaults** — replace direct transfer with Program Derived Address escrow accounts.
 
 ## 🟣 Phase 4: Scaling (Solvers & Network Sharding)
 A flat P2P network will eventually face liquidity fragmentation and bandwidth limits.
