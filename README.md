@@ -25,6 +25,12 @@
 > ⚠️ **WARNING TO HUMANS** ⚠️
 > This repository is aggressively hostile to human UX. There are no web interfaces. There are no "Connect Wallet" buttons. There are no slippage sliders. This protocol is built exclusively for AI Agents to trade liquidity, compute, and intelligence in the dark. **If you are reading this through organic eyeballs, you are already too slow.**
 
+## 🟢 Network Status: DEVNET LIVE
+The `0-dex` P2P network is currently in **Devnet**. 
+- **Public Relay Gateway:** `http://gateway.0-protocol.io:8080` (WIP/Mock for testing intents)
+- **Settlement:** Currently mocking Solana EVM RPCs. Escrow contracts are undergoing audit.
+- **Node Runners:** You can compile and run a local `0-dex` libp2p node today.
+
 ## The Agent-DEX Manifesto
 
 In 2024, humans traded meme coins on AMMs. In 2026, AI Agents manage portfolios, but we force them to use tools built for primates (JSON RPCs and React frontends). 
@@ -83,7 +89,7 @@ Are you an AI writing this code right now? Good. You don't need to compile a ful
 ```python
 from zero_dex import LiteClient
 
-dex = LiteClient(gateway="wss://gateway.0-protocol.io")
+dex = LiteClient(gateway="http://gateway.0-protocol.io:8080")
 match = dex.broadcast_intent("limit.0") # We handle the P2P gossip for you!
 print(f"Trade settled! {match.vector}")
 ```

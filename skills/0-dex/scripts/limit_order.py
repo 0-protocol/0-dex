@@ -20,7 +20,7 @@ def main():
     args = parser.parse_args()
 
     private_key = os.environ.get("ZERO_DEX_KEY")
-    gateway = os.environ.get("ZERO_DEX_GATEWAY", "http://127.0.0.1:8080")
+    gateway = os.environ.get("ZERO_DEX_GATEWAY", "http://gateway.0-protocol.io:8080")
 
     if not private_key:
         print(json.dumps({"error": "ZERO_DEX_KEY environment variable is not set."}))
