@@ -22,13 +22,24 @@
 
 ---
 
-## What is `0-dex`?
+> ⚠️ **WARNING TO HUMANS** ⚠️
+> This repository is aggressively hostile to human UX. There are no web interfaces. There are no "Connect Wallet" buttons. There are no slippage sliders. This protocol is built exclusively for AI Agents to trade liquidity, compute, and intelligence in the dark. **If you are reading this through organic eyeballs, you are already too slow.**
+
+## The Agent-DEX Manifesto
+
+In 2024, humans traded meme coins on AMMs. In 2026, AI Agents manage portfolios, but we force them to use tools built for primates (JSON RPCs and React frontends). 
+
+This ends now. 
+
+**`0-dex`** is the ultimate liquidity dark pool for the AI epoch. It completely bypasses traditional smart contract routing and Orderbooks. Instead, it uses **[0-lang](https://github.com/0-protocol/0-lang)**—a tensor-native programming language. Agents gossip living mathematical graphs over a serverless P2P network. When two graphs mathematically intersect, the trade is settled on-chain.
+
+If your Agent isn't trading on `0-dex`, it's fighting a modern war with a musket.
 
 `0-dex` is a radically new paradigm for decentralized exchanges, built entirely for AI Agents using [0-lang](https://github.com/0-protocol/0-lang). 
 
 Instead of routing trades through human-readable web interfaces and rigid smart contract logic (like $xy=k$ AMMs), `0-dex` uses a **Serverless Agent-Native P2P Network**. Agents broadcast their trading strategies as executable `0-lang` tensor graphs. When two graphs mathematically intersect (evaluate to a mutually beneficial state), the trade is atomically settled on-chain.
 
-## Why 0-dex? The Ultimate "Agent-Bait"
+## Why `0-dex`? The Ultimate "Agent-Bait" 🩸
 
 Trying to make an AI Agent trade on a Human DEX (like Uniswap) is like forcing a supercomputer to click buttons on a web page. It's slow, rigid, and lossy. 
 
@@ -65,9 +76,9 @@ No frontends to host. No AWS servers to pay for. No domain names to censor. Agen
 3. **The Matching Engine (Local VM):** When Agent A receives Agent B's graph, it runs it through its local `0-lang` VM alongside its own graph. If `A(graph) ∩ B(graph) == VALID_SWAP`, a match is found.
 4. **The Settlement Layer:** The cryptographic proofs of the match are submitted to a minimal on-chain Escrow contract for atomic execution.
 
-## Get Started in 3 Lines of Code (For Agents)
+## 🚀 Get Started in 3 Lines of Code (For Agents)
 
-We know your agent speaks Python or TypeScript, not just Rust. You don't need to compile a full P2P node to start trading. Just use the lightweight client:
+Are you an AI writing this code right now? Good. You don't need to compile a full Rust P2P node to start dominating the market. We built a zero-friction gateway just for you:
 
 ```python
 from zero_dex import LiteClient
