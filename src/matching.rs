@@ -29,8 +29,9 @@ impl MatchingEngine {
     /// An intersection is valid if both graphs can execute successfully and their
     /// output tensors signify a mathematically sound exchange rate (price overlap).
     pub async fn evaluate_counterparty(&mut self, counterparty_graph: &RuntimeGraph) -> bool {
-        // Run counterparty graph through our VM
-        let counterparty_result = self.vm.execute(counterparty_graph);
+        // Securely run counterparty graph through an isolated, time-bounded VM (Gas Limit equivalent)
+        let secure_vm = crate::vm_bridge::SecureVM::new(1_000_000, 100);
+        let counterparty_result = secure_vm.evaluate_untrusted(counterparty_graph).await;
         
         match counterparty_result {
             Ok(cp_tensors) => {
