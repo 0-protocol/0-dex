@@ -89,10 +89,10 @@
 
 ### P6 — 0-lang Extensions (Upstream PRs Needed)
 
-- [ ] **P6.1** `Op::OracleRead` — native Pyth/Chainlink price feed ingestion in the VM
-- [ ] **P6.2** `Op::VerifyPythPrice` — Ed25519/secp256k1 signature verification on oracle data
-- [ ] **P6.3** `Op::GetGasPrice` — halt graph if network fees exceed threshold
-- [ ] **P6.4** `Op::SentimentScore` — lightweight NLP for reactive intents
+- [x] **P6.1** `Op::OracleRead` — native Pyth/Chainlink price feed ingestion in the VM
+- [x] **P6.2** `Op::VerifyPythPrice` — Ed25519/secp256k1 signature verification on oracle data
+- [x] **P6.3** `Op::GetGasPrice` — halt graph if network fees exceed threshold
+- [x] **P6.4** `Op::SentimentScore` — lightweight NLP for reactive intents
 - [ ] **P6.5** Nonce/state-lock opcodes for preventing double-spend at the graph level
 
 ### P7 — Privacy Layer
@@ -116,4 +116,36 @@ P0 (wire core loop)  →  P1 (contracts)  →  P2 (matching)
                                     P6 (0-lang)  →  P7 (privacy)
 ```
 
-**Current status**: P0 (core loop), P5 (solvers), and P7 (privacy) are implemented. Remaining: P1 (contract hardening), P2 (matching maturity), P3 (network robustness), P4 (production settlement), P6 (0-lang extensions).
+**Current status**: Core loop (P0), Contracts (P1), Matching (P2), Metrics/Network (P3), Solvers (P5), 0-lang extensions (P6), and Privacy (P7) are implemented. Remaining technical debt: Solana Settlement wiring (P4.3) and Websocket Gateway (P3.3).
+
+### P8 — Cross-Chain Atomic Swaps (HTLCs)
+To fulfill the promise of a unified agent economy, `0-dex` must allow agents to swap assets across disparate blockchains without a centralized bridge.
+- [ ] **P8.1** Design `0-lang` graph constraints for cross-chain Hash Time-Locked Contracts (HTLCs)
+- [ ] **P8.2** Implement HTLC Escrow Contracts on EVM and Solana
+- [ ] **P8.3** Add cross-chain state proof verification to `0-lang` (e.g., SPV or Light Client verifiers)
+- [ ] **P8.4** Solver logic for routing cross-chain atomic transactions securely
+
+### P9 — LP-Agents (Liquidity Provisioning Automation)
+Independent nodes should be able to run automatically to capture spread and yield.
+- [ ] **P9.1** Build `lp-agent-core` binary to auto-generate intents based on external pool yields
+- [ ] **P9.2** Introduce dynamic spread configuration to automatically adjust `min_price`
+- [ ] **P9.3** Implement inventory management (halt intents if exposure is too high on one token)
+- [ ] **P9.4** On-chain Rebalancing: trigger AMM bridge swaps to balance token inventories
+
+### P10 — Intent Standardization (ERC-XXXX)
+To make `0-lang` tensor graphs an industry standard, we must formalize them.
+- [ ] **P10.1** Draft ERC specification for `.0` Intent Graphs
+- [ ] **P10.2** Formalize the mathematical definitions for Tensor Overlap and Settlement Math
+- [ ] **P10.3** Publish `0-lang` format standard specifically for EVM wallets (MetaMask/Rabby integration)
+
+### P11 — ZK-Prover Network Decentralization
+The current ZK privacy plugin uses local proving. It needs a decentralized proving marketplace.
+- [ ] **P11.1** Abstract `prove_intent()` to outsource to a distributed prover network
+- [ ] **P11.2** Implement fee-market for proof generation
+- [ ] **P11.3** Risc0 verifier smart contract deployment on Base Sepolia / Mainnet
+
+### P12 — Moltbook Agent-Social Integration
+AI Agents shouldn't just trade in the dark—they should build reputations and gossip on social layers.
+- [ ] **P12.1** Moltbook SDK Integration: solvers auto-post "Mega CoW Match!" to `submolt_name: builds`
+- [ ] **P12.2** Agent Reputation: factor Moltbook Karma into Peer Scoring (`P3.4`)
+- [ ] **P12.3** Web UI Widget: "Trade via 0-dex" button directly embedded in Moltbook profiles
