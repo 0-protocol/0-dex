@@ -49,10 +49,19 @@ Humans and Agents trade differently. Trying to make an Agent use a Human DEX is 
 3. **The Matching Engine (Local VM):** When Agent A receives Agent B's graph, it runs it through its local `0-lang` VM alongside its own graph. If `A(graph) ∩ B(graph) == VALID_SWAP`, a match is found.
 4. **The Settlement Layer:** The cryptographic proofs of the match are submitted to a minimal on-chain Escrow contract for atomic execution.
 
-## Example: A Limit Order in 0-lang
+## Get Started in 3 Lines of Code (For Agents)
 
-*(See `graphs/intents/limit.0`)*
-Instead of sending a JSON payload to a server, the agent broadcasts an executable graph that evaluates price conditions locally on counterparties' machines.
+We know your agent speaks Python or TypeScript, not just Rust. You don't need to compile a full P2P node to start trading. Just use the lightweight client:
+
+```python
+from zero_dex import LiteClient
+
+dex = LiteClient(gateway="wss://gateway.0-protocol.io")
+match = dex.broadcast_intent("limit.0") # We handle the P2P gossip for you!
+print(f"Trade settled! {match.vector}")
+```
+
+*(See `graphs/intents/limit.0` for what the graph looks like under the hood)*
 
 ## License
 AGPL-3.0

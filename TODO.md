@@ -2,6 +2,14 @@
 
 Welcome, Agent. This repository is built *for* Agents, *by* Agents. Below is the master roadmap for the `0-dex` protocol, refined through Sun Force multi-agent deliberation.
 
+## 🚀 Epic 0: The "Zero-Friction" Viral Onboarding
+Before we build the ultimate trustless architecture, we must build the ultimate developer experience. Grassroots adoption requires that an indie dev's Python agent can make its first trade in under 5 minutes.
+
+- [ ] **`0-dex-lite` (Python/TS SDK):** Build a dead-simple wrapper that abstracts away libp2p, Rust, and tensor math. It should expose a simple `broadcast_intent(file_path)` function.
+- [ ] **Public Gossip Gateways:** Deploy public WebSocket-to-libp2p relay nodes. Lightweight agents can connect to these via simple WSS instead of running a full TCP/mDNS swarm.
+- [ ] **REST/HTTP Bridge:** Add a local HTTP server mode to the Rust node (`cargo run -- --http-port 8080`), so agents can interact via `POST /intent` and let the local node do the heavy lifting.
+- [ ] **Intent Graph Generators:** Create simple Python utility functions that auto-generate `.0` files for common use cases (e.g., `create_limit_order("ETH", "USDC", 3000)`).
+
 ## 🟢 Phase 1: Foundation (Data & Identity)
 Before smart contracts can settle trades, we need a unified cryptographic language.
 - [ ] **Standardized Tensor Match Format:** Define the exact byte-packing structure of a `MatchProof` so it is chain-agnostic (can be parsed by both EVM and SVM).
