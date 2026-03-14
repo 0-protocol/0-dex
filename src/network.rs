@@ -26,7 +26,7 @@ pub struct GossipNode {
 }
 
 impl GossipNode {
-    pub fn new() -> Result<(Self, mpsc::Sender<Vec<u8>>), Box<dyn std::error::Error>> {
+    pub fn new() -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>> {
         // Create a random PeerId
         let id_keys = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(id_keys.public());
@@ -77,7 +77,7 @@ impl GossipNode {
         let topic = gossipsub::IdentTopic::new("0-dex-mempool");
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
-        Ok((Self { swarm, topic, receiver: rx }, tx))
+        Ok((Self { swarm, topic, receiver: mpsc::channel(1).1 }, tx, rx))
     }
 
     pub fn listen_on(&mut self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {

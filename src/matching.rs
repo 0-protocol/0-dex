@@ -28,7 +28,12 @@ impl MatchingEngine {
     /// Evaluates if any of our local intents intersect with the counterparty's intent.
     /// An intersection is valid if both graphs can execute successfully and their
     /// output tensors signify a mathematically sound exchange rate (price overlap).
-    pub async fn evaluate_counterparty(&mut self, counterparty_graph: &RuntimeGraph) -> bool {
+    pub async fn evaluate_counterparty(
+        &mut self, 
+        counterparty_graph: &RuntimeGraph,
+        counterparty_address: &str,
+        counterparty_sig: &str,
+    ) -> bool {
         // Securely run counterparty graph through an isolated, time-bounded VM (Gas Limit equivalent)
         let secure_vm = crate::vm_bridge::SecureVM::new(1_000_000, 100);
         let counterparty_result = secure_vm.evaluate_untrusted(counterparty_graph).await;
@@ -61,10 +66,10 @@ impl MatchingEngine {
                             
                             // Send to settlement layer
                             let proof = MatchProof {
-                                local_intent_id: "local_id".to_string(), // Would be hash in real implementation
-                                counterparty_intent_id: "cp_id".to_string(),
+                                local_intent_id: "local_id".to_string(), // TODO: inject local wallet signature
+                                counterparty_intent_id: counterparty_address.to_string(),
                                 settled_vector: local_vector.clone(),
-                                signature: vec![], // Would be cryptographic signature
+                                signature: hex::decode(counterparty_sig.trim_start_matches("0x")).unwrap_or_default(),
                             };
                             
                             let _ = self.match_sender.send(proof).await;

@@ -7,6 +7,7 @@ mod matching;
 mod settlement;
 mod vm_bridge;
 mod api;
+mod crypto;
 
 use network::GossipNode;
 use matching::MatchingEngine;
@@ -25,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 2. Initialize the Gossip Network
     info!("Starting libp2p gossip network...");
-    let (mut gossip_node, gossip_tx) = GossipNode::new()?;
+    let (mut gossip_node, gossip_tx, gossip_node_rx) = GossipNode::new()?;
     // Listen on all interfaces, random OS-assigned port
     gossip_node.listen_on("/ip4/0.0.0.0/tcp/0")?;
 
@@ -56,8 +57,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Let the node run
     info!("0-dex node is running in serverless P2P mode.");
+    
+    // Create a background task to process incoming gossip messages into the matching engine
+    tokio::spawn(async move {
+        let mut gossip_rx = gossip_node_rx; // assuming we passed this out of GossipNode::new
+        while let Some(msg_bytes) = gossip_rx.recv().await {
+            // Attempt to decode the payload as a SignedIntent
+            if let Ok(signed_intent) = serde_json::from_slice::<crypto::SignedIntent>(&msg_bytes) {
+                info!("Received signed intent from {}", signed_intent.owner_address);
+                
+                // 1. Verify cryptographic signature
+                match signed_intent.verify() {
+                    Ok(true) => {
+                        info!("Signature valid! Parsing graph...");
+                        // 2. Parse into RuntimeGraph
+                        // In a full implementation we'd parse the string, but for now we'll mock it
+                        // let graph = zerolang::RuntimeGraph::parse_from_string(&signed_intent.graph_content);
+                        // matching_engine.evaluate_counterparty(&graph, &signed_intent.owner_address, &signed_intent.signature_hex).await;
+                    },
+                    Ok(false) => tracing::warn!("Signature invalid for intent! Dropping."),
+                    Err(e) => tracing::warn!("Failed to verify signature: {}", e),
+                }
+            } else {
+                tracing::warn!("Received unrecognized payload format on gossip network");
+            }
+        }
+    });
+
     loop {
-        // Here we would pump the gossip receiver into the matching engine
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
     }
 }
