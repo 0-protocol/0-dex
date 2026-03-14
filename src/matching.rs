@@ -3,17 +3,21 @@
 //! Evaluates incoming graphs against local intents using the 0-lang VM.
 
 use zerolang::{RuntimeGraph, VM};
+use tokio::sync::mpsc;
+use crate::settlement::MatchProof;
 
 pub struct MatchingEngine {
     vm: VM,
     local_intents: Vec<RuntimeGraph>,
+    match_sender: mpsc::Sender<MatchProof>,
 }
 
 impl MatchingEngine {
-    pub fn new() -> Self {
+    pub fn new(match_sender: mpsc::Sender<MatchProof>) -> Self {
         Self {
             vm: VM::new(),
             local_intents: Vec::new(),
+            match_sender,
         }
     }
 
@@ -24,7 +28,7 @@ impl MatchingEngine {
     /// Evaluates if any of our local intents intersect with the counterparty's intent.
     /// An intersection is valid if both graphs can execute successfully and their
     /// output tensors signify a mathematically sound exchange rate (price overlap).
-    pub fn evaluate_counterparty(&mut self, counterparty_graph: &RuntimeGraph) -> bool {
+    pub async fn evaluate_counterparty(&mut self, counterparty_graph: &RuntimeGraph) -> bool {
         // Run counterparty graph through our VM
         let counterparty_result = self.vm.execute(counterparty_graph);
         
@@ -53,6 +57,16 @@ impl MatchingEngine {
                                 "MATCH FOUND! Local tensor {:?} intersects with Counterparty tensor {:?}",
                                 local_vector, cp_vector
                             );
+                            
+                            // Send to settlement layer
+                            let proof = MatchProof {
+                                local_intent_id: "local_id".to_string(), // Would be hash in real implementation
+                                counterparty_intent_id: "cp_id".to_string(),
+                                settled_vector: local_vector.clone(),
+                                signature: vec![], // Would be cryptographic signature
+                            };
+                            
+                            let _ = self.match_sender.send(proof).await;
                             return true;
                         }
                     }
