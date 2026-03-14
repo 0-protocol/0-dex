@@ -8,6 +8,7 @@ mod settlement;
 mod vm_bridge;
 mod api;
 mod crypto;
+mod abi;
 
 use network::GossipNode;
 use matching::MatchingEngine;
