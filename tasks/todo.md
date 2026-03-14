@@ -58,8 +58,8 @@
 - [x] **P2.1** Real intersection math: replace the placeholder `confidence > 0.8` check with proper multi-dimensional tensor overlap (price bounds, amounts, token IDs)
 - [x] **P2.2** Partial fills: allow graphs to match on a subset of the requested amount
 - [x] **P2.3** Inject local wallet identity into `MatchProof.local_intent_id` (currently hardcoded `"local_id"`)
-- [ ] **P2.4** Graph loading: on startup, load all `.0` files from `graphs/intents/` and `graphs/pools/` as local intents
-- [ ] **P2.5** Hot-reload: watch the `graphs/` directory and register new intents without restart
+- [x] **P2.4** Graph loading: on startup, load all `.0` files from `graphs/intents/` and `graphs/pools/` as local intents
+- [x] **P2.5** Hot-reload: watch the `graphs/` directory and register new intents without restart
 
 ### P3 — Network Robustness
 
