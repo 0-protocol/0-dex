@@ -13,6 +13,7 @@ mod api;
 mod crypto;
 mod abi;
 mod intent_watcher;
+mod metrics;
 mod intent_pool;
 mod solver;
 mod liquidity_relayer;

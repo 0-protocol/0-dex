@@ -44,6 +44,7 @@ pub async fn start_api_server(
 
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/metrics", get(metrics_endpoint))
         .route("/intent", post(submit_intent))
         .with_state(state);
 
@@ -97,4 +98,8 @@ async fn submit_intent(
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Broadcast failed".to_string()))
         }
     }
+}
+
+async fn metrics_endpoint() -> String {
+    crate::metrics::encode_metrics()
 }

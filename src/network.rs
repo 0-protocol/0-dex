@@ -145,6 +145,7 @@ impl GossipNode {
                         })) => {
                             let topic_str = message.topic.as_str();
                             info!("Got message id={id} from peer={peer_id} topic={topic_str}");
+                            crate::metrics::INTENTS_RECEIVED.inc();
                             let _ = self.inbound_tx.send(message.data).await;
                         }
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -155,7 +156,10 @@ impl GossipNode {
                 }
                 Some(payload) = self.outbound_rx.recv() => {
                     if let Some(topic) = self.topics.get(&self.publish_topic_name) {
-                        if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), payload) {
+                        if let Err(e) = {
+                            crate::metrics::INTENTS_PUBLISHED.inc();
+                            self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), payload)
+                        } {
                             warn!("Failed to publish to {}: {:?}", self.publish_topic_name, e);
                         }
                     }

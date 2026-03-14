@@ -141,6 +141,7 @@ impl MatchingEngine {
                                 amount_b, local.receive_token
                             );
                             
+                            crate::metrics::MATCHES_FOUND.inc();
                             let proof = MatchProof {
                                 local_intent_id: self.local_wallet_address.clone(),
                                 counterparty_intent_id: counterparty_address.to_string(),

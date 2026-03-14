@@ -67,7 +67,7 @@
 - [x] **P3.2** Add configurable CLI args: `--http-port`, `--listen-addr`, `--bootstrap-peers`, `--graphs-dir`
 - [ ] **P3.3** Add WebSocket-to-libp2p gateway mode for lightweight browser/Python agents
 - [ ] **P3.4** Implement peer scoring / rate limiting to prevent gossip spam
-- [ ] **P3.5** Add metrics endpoint (Prometheus) for monitoring intent throughput, match rate, settlement latency
+- [x] **P3.5** Add metrics endpoint (Prometheus) for monitoring intent throughput, match rate, settlement latency
 
 ### P4 — Production Settlement
 

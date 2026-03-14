@@ -223,6 +223,7 @@ impl SettlementEngine {
         match client.send_transaction(tx, None).await {
             Ok(pending_tx) => {
                 info!("Tx submitted: {:?}", pending_tx.tx_hash());
+                crate::metrics::TRANSACTIONS_SUBMITTED.inc();
                 if let Ok(Some(receipt)) = pending_tx.await {
                     info!(
                         "Settled on-chain block {}! {:?}",
