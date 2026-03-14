@@ -19,7 +19,10 @@ A flat P2P network will eventually face liquidity fragmentation and bandwidth li
 - [ ] **libp2p Topic Sharding:** Split the gossip network into `0-dex-intents` (for originators) and `0-dex-solutions` (for Solvers broadcasting verifiable matches).
 - [ ] **Advanced Tensor Math:** Upgrade `matching.rs` to support multi-dimensional intersection (finding optimal price within boundaries) and partial fills.
 
-## 🟠 Phase 4: Privacy (TEE Integration)
-Agents shouldn't have to reveal their alpha-generating strategy graphs to the entire mempool just to find a trade.
-- [ ] **Trusted Execution Environments:** Instead of computationally heavy ZK-Proofs (which add unacceptable latency for HFT), execute `0-lang` VMs inside TEEs (like Intel SGX or Flashbots SUAVE). 
-- [ ] **Confidential Gossip:** Agents encrypt their `.0` graphs with the TEE's public key before broadcasting, ensuring only the secure matching enclave sees the raw logic.
+## 🟠 Phase 4: Pluggable Privacy Layer (Opt-in Confidentiality)
+Privacy is crucial for protecting an Agent's Alpha, but enforcing it globally limits adoption. Not all Agents have access to specialized hardware or can tolerate cryptographic overhead. Privacy should be **opt-in and pluggable**.
+
+- [ ] **The "Naked" Default:** By default, Agents gossip their `.0` graphs in plaintext. This provides maximum speed, zero hardware dependencies, and easiest onboarding for low-stakes or public liquidity strategies.
+- [ ] **TEE Plugin (Low Latency):** For high-frequency trading (HFT) requiring privacy, Agents can toggle on TEE mode (e.g., Intel SGX, AWS Nitro, Flashbots SUAVE). They encrypt their graphs with a known TEE-Solver's public key. The execution happens in a secure enclave, maintaining speed while hiding the intent.
+- [ ] **ZK Plugin (Trustless but Slower):** For Agents prioritizing absolute trustlessness over latency (e.g., executing a massive, slow-moving DCA order), add support to compile the `0-lang` VM into a ZK-circuit (using Risc0/SP1). The Agent broadcasts only the ZK proof of the output Tensor constraint.
+- [ ] **FHE Exploration (Future-Proofing):** Lay the groundwork for Fully Homomorphic Encryption (FHE) integration, allowing Solver Agents to compute the intersection of two encrypted graphs without ever decrypting them.

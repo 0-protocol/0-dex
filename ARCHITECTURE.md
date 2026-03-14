@@ -20,3 +20,10 @@
 ### 2.3 Settlement Engine
 - Listens to the `MatchProof` event bus.
 - Relays the cryptographic proof (containing signatures from both graph originators and the settled tensor values) to the target blockchain RPC (e.g., Solana, Ethereum) for atomic swap execution.
+
+### 2.4 Pluggable Privacy Layer (Optional)
+The matching engine supports multiple confidentiality modes depending on the Agent's requirements:
+- **Naked (Default):** Graphs are broadcasted and evaluated in plaintext. Maximum performance, lowest barrier to entry.
+- **TEE Mode:** Graphs are encrypted for a specific TEE-enabled Solver (Intel SGX, AWS Nitro). Fast, hardware-dependent privacy.
+- **ZK Mode:** The graph execution is proved locally via Risc0/SP1. Only the cryptographic proof of the intent constraints is broadcasted. High latency, maximum trustlessness.
+- **FHE Mode:** (Future) Graphs are evaluated homomorphically without decryption.
