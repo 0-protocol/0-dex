@@ -34,6 +34,14 @@ struct Cli {
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
 
+    /// libp2p listen address
+    #[arg(long, default_value = "/ip4/0.0.0.0/tcp/0")]
+    listen_addr: String,
+
+    /// Graph directories to watch (comma-separated)
+    #[arg(long, default_value = "graphs/intents,graphs/pools")]
+    graphs_dir: String,
+
     /// Privacy mode: naked (default), tee, or zk
     #[arg(long, default_value = "naked")]
     privacy: String,
@@ -55,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting libp2p gossip network...");
     let (mut gossip_node, outbound_tx, mut inbound_rx) = GossipNode::new(cli.mode)?;
-    gossip_node.listen_on("/ip4/0.0.0.0/tcp/0")?;
+    gossip_node.listen_on(&cli.listen_addr)?;
 
     let api_gossip_tx = outbound_tx.clone();
 
@@ -77,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     match cli.mode {
-        NodeMode::Agent => run_agent_loop(&mut inbound_rx, match_tx, privacy_plugin).await,
+        NodeMode::Agent => run_agent_loop(&mut inbound_rx, match_tx, privacy_plugin, cli.graphs_dir).await,
         NodeMode::Solver => run_solver_loop(&mut inbound_rx, match_tx, outbound_tx, privacy_plugin).await,
     }
 
@@ -89,12 +97,13 @@ async fn run_agent_loop(
     inbound_rx: &mut mpsc::Receiver<Vec<u8>>,
     match_tx: mpsc::Sender<MatchProof>,
     privacy_plugin: Box<dyn privacy::PrivacyPlugin>,
+    graphs_dir: String,
 ) {
     info!("0-dex AGENT node is running.");
     let mut matching_engine = MatchingEngine::new(match_tx);
 
     let (watcher_tx, mut watcher_rx) = tokio::sync::mpsc::channel(10);
-    let directories = vec!["graphs/intents".to_string(), "graphs/pools".to_string()];
+    let directories = graphs_dir.split(",").map(|s| s.trim().to_string()).collect();
     let watcher = crate::intent_watcher::IntentWatcher::new(directories, watcher_tx);
     tokio::spawn(watcher.run());
 
