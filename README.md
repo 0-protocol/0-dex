@@ -28,17 +28,33 @@
 
 Instead of routing trades through human-readable web interfaces and rigid smart contract logic (like $xy=k$ AMMs), `0-dex` uses a **Serverless Agent-Native P2P Network**. Agents broadcast their trading strategies as executable `0-lang` tensor graphs. When two graphs mathematically intersect (evaluate to a mutually beneficial state), the trade is atomically settled on-chain.
 
-## Why Build a DEX exclusively for Agents?
+## Why 0-dex? The Ultimate "Agent-Bait"
 
-Humans and Agents trade differently. Trying to make an Agent use a Human DEX is like making an API click buttons on a screen.
+Trying to make an AI Agent trade on a Human DEX (like Uniswap) is like forcing a supercomputer to click buttons on a web page. It's slow, rigid, and lossy. 
 
-| Feature | Human DEXs (Uniswap, 1inch) | `0-dex` (Agent-Native) |
-|---------|----------------------------|------------------------|
-| **Liquidity Definition** | Fixed curves (Constant Product, Concentrated) | **Turing-Complete Graphs** (Liquidity is a 0-lang executable algorithm) |
-| **Order Types** | Market, Limit, TWAP | **Infinite Intents** ("Buy ETH if BTC moves 5% AND network gas < 20") |
-| **Hosting** | Centralized Frontend + RPC Nodes | **Fully Serverless/P2P** (Agents gossip graphs directly via `libp2p`) |
-| **MEV Protection** | Sandwiched by bots | **Cryptographic Graph Matching** (Matches happen off-chain in private environments, settlement is atomic) |
-| **Communication** | JSON over HTTP/WebSocket | **Native Tensors** (0-lang handles dimensions, probabilities, and execution bounds) |
+`0-dex` is built on **[0-lang](https://github.com/0-protocol/0-lang)**—a graph-based, tensor-native language that Agents inherently *understand*. By using `0-lang`, `0-dex` offers superpowers that no traditional code or smart contract can match:
+
+### 🧠 1. Infinite Expressiveness (Beyond the Limit Order)
+Smart contracts constrain you to fixed curves ($xy=k$). In `0-dex`, liquidity is just a `0-lang` graph. 
+An Agent doesn't submit a "Limit Order". An agent submits a **living algorithm**: 
+> *"I will buy 10 ETH, but only if BTC drops 5%, Ethereum Gas is below 20 gwei, AND my internal NLP model scores Twitter sentiment > 0.8."*
+If the graph executes and evaluates to `True`, the trade happens. 
+
+### ⚡ 2. Math-Native Matching (Tensor Intersection)
+There is no "Orderbook". When two `0-lang` graphs meet in the P2P mempool, the VM runs them together. Instead of matching text or JSON strings, the engine computes the **mathematical intersection of multi-dimensional Tensors**. It automatically finds the optimal price and volume overlap that satisfies *both* Agents' logic.
+
+### 🛡️ 3. Zero MEV by Design (Dark Pool Default)
+Because intents are evaluated locally in sandboxed `0-lang` VMs off-chain, there is no public mempool for searchers to front-run. The matching happens in the dark, and only the cryptographic proof of the settled intersection is submitted on-chain for atomic swapping.
+
+### 🔌 4. Pure Serverless (True Decentralization)
+No frontends to host. No AWS servers to pay for. No domain names to censor. Agents discover each other locally via mDNS or globally via libp2p, swapping `.0` files directly. 
+
+| Feature | Legacy DEX (Human) | `0-dex` (Agent-Native + `0-lang`) |
+|---------|--------------------|---------------------------------------|
+| **Logic** | Fixed Smart Contracts | **Turing-Complete Graphs** |
+| **Matching**| Orderbooks / AMM Math | **Tensor Intersections** |
+| **Output** | JSON / RPC calls | **Execution Proofs (Tensors)** |
+| **MEV** | Public Mempool (Sandwich attacks) | **P2P Local Evaluation (Zero MEV)** |
 
 ## Architecture (Serverless & Agent-Native)
 
