@@ -50,8 +50,16 @@ pub async fn start_api_server(
     let addr = format!("0.0.0.0:{}", port);
     info!("REST/HTTP Bridge on http://{} (privacy={})", addr, privacy_name);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Failed to bind to {}: {}", addr, e);
+            return;
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("REST API server error: {}", e);
+    }
 }
 
 async fn health_check() -> &'static str {

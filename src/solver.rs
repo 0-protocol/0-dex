@@ -182,11 +182,12 @@ impl SolverEngine {
                     ).unwrap_or_default(),
                 };
                 let _ = self.match_sender.send(proof).await;
+                }
             }
 
             // Close the cycle: last -> first
             if cycle.len() >= 2 {
-                let last = cycle.last().unwrap();
+                if let Some(last) = cycle.last() {
                 let first = &cycle[0];
                 let proof = MatchProof {
                     local_intent_id: last.agent_address.clone(),
@@ -200,6 +201,7 @@ impl SolverEngine {
                     ).unwrap_or_default(),
                 };
                 let _ = self.match_sender.send(proof).await;
+                }
             }
 
             // Mark all participating intents as matched
