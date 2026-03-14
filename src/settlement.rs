@@ -6,6 +6,8 @@
 use tokio::sync::mpsc;
 use tracing::{info, error, debug};
 use zerolang::Tensor;
+use ethers::prelude::*;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct MatchProof {
@@ -18,13 +20,18 @@ pub struct MatchProof {
 pub struct SettlementEngine {
     rpc_url: String,
     match_receiver: mpsc::Receiver<MatchProof>,
+    // The private key of the Relayer/Solver who submits the batched swap
+    relayer_private_key: Option<String>,
 }
 
 impl SettlementEngine {
     pub fn new(rpc_url: &str, match_receiver: mpsc::Receiver<MatchProof>) -> Self {
+        // In production, this comes from an env var or secure vault
+        let relayer_key = std::env::var("ZERO_DEX_RELAYER_KEY").ok();
         Self {
             rpc_url: rpc_url.to_string(),
             match_receiver,
+            relayer_private_key: relayer_key,
         }
     }
 
@@ -62,11 +69,47 @@ impl SettlementEngine {
             Ok(encoded_data) => {
                 info!("Successfully ABI-encoded settlement payload: 0x{}", hex::encode(&encoded_data));
                 
-                // 3. Mocking the final eth_sendRawTransaction RPC call
-                info!("Submitting atomic swap transaction to the blockchain...");
-                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-                
-                info!("✅ Trade Settled On-Chain! Vector: {:?}", proof.settled_vector);
+                // 3. Real EVM RPC Broadcast via ethers-rs
+                if let Some(ref priv_key) = self.relayer_private_key {
+                    info!("Connecting to EVM RPC provider: {}", self.rpc_url);
+                    if let Ok(provider) = Provider::<Http>::try_from(self.rpc_url.as_str()) {
+                        if let Ok(wallet) = priv_key.parse::<LocalWallet>() {
+                            // Assume chain ID 1 for mainnet or fetch dynamically
+                            let client = SignerMiddleware::new(provider, wallet.with_chain_id(1u64));
+                            let client = Arc::new(client);
+
+                            // The deployed address of the ZeroDexEscrow contract
+                            let escrow_address = "0x0000000000000000000000000000000000000000".parse::<Address>().unwrap();
+                            
+                            let tx = TransactionRequest::new()
+                                .to(escrow_address)
+                                .data(encoded_data.clone());
+                            
+                            info!("Submitting atomic swap transaction to the blockchain...");
+                            match client.send_transaction(tx, None).await {
+                                Ok(pending_tx) => {
+                                    info!("✅ Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
+                                    // Wait for confirmation
+                                    if let Ok(Some(receipt)) = pending_tx.await {
+                                        info!("✅ Trade Settled On-Chain in block {}! Vector: {:?}", receipt.block_number.unwrap_or_default(), proof.settled_vector);
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to broadcast transaction: {}", e);
+                                }
+                            }
+                        } else {
+                            error!("Invalid relayer private key format");
+                        }
+                    } else {
+                        error!("Failed to connect to RPC provider");
+                    }
+                } else {
+                    // Fallback mock if no key is configured
+                    info!("No relayer key configured. Simulating RPC submission...");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                    info!("✅ Trade Settled (Simulated)! Vector: {:?}", proof.settled_vector);
+                }
             },
             Err(e) => {
                 error!("Failed to encode ABI payload for settlement: {}", e);
