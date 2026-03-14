@@ -44,6 +44,10 @@ impl MatchingEngine {
     }
 
     /// Register a local intent from its raw source code and compiled graph
+    pub fn remove_intent(pub fn register_intent(&mut self, id: String, graph: RuntimeGraph, source: String) {mut self, id: pub fn register_intent(&mut self, id: String, graph: RuntimeGraph, source: String) {str) {
+        self.local_intents.remove(id);
+    }
+
     pub fn register_intent(&mut self, id: String, graph: RuntimeGraph, source: String) {
         let give_token = extract_def_value(&source, "sell_asset").unwrap_or_default();
         let receive_token = extract_def_value(&source, "buy_asset").unwrap_or_default();

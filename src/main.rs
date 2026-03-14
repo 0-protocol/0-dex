@@ -12,6 +12,7 @@ mod vm_bridge;
 mod api;
 mod crypto;
 mod abi;
+mod intent_watcher;
 mod intent_pool;
 mod solver;
 mod liquidity_relayer;
@@ -92,29 +93,45 @@ async fn run_agent_loop(
     info!("0-dex AGENT node is running.");
     let mut matching_engine = MatchingEngine::new(match_tx);
 
-    while let Some(msg_bytes) = inbound_rx.recv().await {
-        let payload = match privacy_plugin.unwrap_intent(&msg_bytes) {
-            Ok(privacy::UnwrappedIntent::Plaintext(intent)) => intent,
-            Ok(_) => { tracing::debug!("Agent received non-plaintext intent, skipping"); continue; }
-            Err(e) => { tracing::warn!("Failed to unwrap intent: {}", e); continue; }
-        };
+    let (watcher_tx, mut watcher_rx) = tokio::sync::mpsc::channel(10);
+    let directories = vec!["graphs/intents".to_string(), "graphs/pools".to_string()];
+    let watcher = crate::intent_watcher::IntentWatcher::new(directories, watcher_tx);
+    tokio::spawn(watcher.run());
 
-        match payload.verify() {
-            Ok(true) => {
-                info!("Signature valid from {}. Evaluating...", payload.owner_address);
-                match zerolang::RuntimeGraph::from_reader(payload.graph_content.as_bytes()) {
-                    Ok(graph) => {
+
+    loop {
+        tokio::select! {
+            Some(msg_bytes) = inbound_rx.recv() => {
+                let payload = match privacy_plugin.unwrap_intent(&msg_bytes) {
+                    Ok(privacy::UnwrappedIntent::Plaintext(intent)) => intent,
+                    Ok(_) => { tracing::debug!("Agent received non-plaintext intent, skipping"); continue; }
+                    Err(e) => { tracing::warn!("Failed to unwrap intent: {}", e); continue; }
+                };
+
+                match payload.verify() {
+                    Ok(true) => {
+                        info!("Signature valid from {}. Evaluating...", payload.owner_address);
                         matching_engine.evaluate_counterparty(
                             &payload.graph_content,
                             &payload.owner_address,
                             &payload.signature_hex,
                         ).await;
                     }
-                    Err(e) => tracing::warn!("Failed to parse counterparty graph: {:?}", e),
+                    Ok(false) => tracing::warn!("Signature invalid! Dropping."),
+                    Err(e) => tracing::warn!("Failed to verify signature: {}", e),
                 }
             }
-            Ok(false) => tracing::warn!("Signature invalid! Dropping."),
-            Err(e) => tracing::warn!("Failed to verify signature: {}", e),
+            Some(event) = watcher_rx.recv() => {
+                match event {
+                    crate::intent_watcher::IntentEvent::Updated(path, graph, source) => {
+                        matching_engine.register_intent(path, graph, source);
+                    }
+                    crate::intent_watcher::IntentEvent::Removed(path) => {
+                        matching_engine.remove_intent(&path);
+                    }
+                }
+            }
+            else => break,
         }
     }
 }
