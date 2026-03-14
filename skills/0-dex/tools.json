@@ -1,0 +1,33 @@
+{
+  "name": "0-dex",
+  "description": "Agent-native trading on the serverless 0-dex P2P network using 0-lang graphs.",
+  "tools": [
+    {
+      "name": "zero_dex_limit_order",
+      "description": "Broadcasts a limit order intent to the 0-dex P2P network.",
+      "command": "python scripts/limit_order.py",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {
+          "buy_asset": {
+            "type": "STRING",
+            "description": "The token symbol you want to buy (e.g. 'ETH')."
+          },
+          "sell_asset": {
+            "type": "STRING",
+            "description": "The token symbol you are selling (e.g. 'USDC')."
+          },
+          "min_price": {
+            "type": "NUMBER",
+            "description": "The minimum acceptable price in sell_asset per buy_asset."
+          },
+          "amount": {
+            "type": "NUMBER",
+            "description": "The total amount of buy_asset you want to acquire."
+          }
+        },
+        "required": ["buy_asset", "sell_asset", "min_price", "amount"]
+      }
+    }
+  ]
+}
