@@ -143,20 +143,20 @@ impl SettlementEngine {
             .data(encoded_data);
 
         info!("Submitting atomic swap transaction to the blockchain");
-        match client.send_transaction(tx, None).await {
-            Ok(pending_tx) => {
-                info!("Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
-                if let Ok(Some(receipt)) = pending_tx.await {
-                    info!(
-                        "Trade Settled On-Chain in block {} for match_id={}",
-                        receipt.block_number.unwrap_or_default(),
-                        proof.match_id
-                    );
-                }
-            }
+        let pending_tx = match client.send_transaction(tx, None).await {
+            Ok(pending_tx) => pending_tx,
             Err(e) => {
                 error!("Failed to broadcast transaction: {}", e);
+                return;
             }
+        };
+        info!("Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
+        if let Ok(Some(receipt)) = pending_tx.await {
+            info!(
+                "Trade Settled On-Chain in block {} for match_id={}",
+                receipt.block_number.unwrap_or_default(),
+                proof.match_id
+            );
         }
     }
 }

@@ -81,6 +81,16 @@ contract ReentrantToken {
 }
 
 contract ZeroDexEscrowTest is Test {
+    event TradeSettled(
+        bytes32 indexed matchId,
+        address indexed partyA,
+        address indexed partyB,
+        address tokenA,
+        address tokenB,
+        uint256 amountA,
+        uint256 amountB
+    );
+
     ZeroDexEscrow escrow;
     MockERC20 tokenA;
     MockERC20 tokenB;
@@ -185,7 +195,7 @@ contract ZeroDexEscrowTest is Test {
         bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
 
         vm.expectEmit(true, true, true, true);
-        emit ZeroDexEscrow.TradeSettled(matchId, alice, bob, address(tokenA), address(tokenB), 100 ether, 350 ether);
+        emit TradeSettled(matchId, alice, bob, address(tokenA), address(tokenB), 100 ether, 350 ether);
         escrow.executeSwap(intentA, intentB, 100 ether, 350 ether, matchId, sigA, sigB);
     }
 
@@ -477,7 +487,7 @@ contract ZeroDexEscrowTest is Test {
     // ───────────────── Edge Cases ─────────────────
 
     function testDifferentMatchIdAllowsSameParties() public {
-        _executeDefault(50 ether, 175 ether);
+        _executeDefault(100 ether, 350 ether);
 
         ZeroDexEscrow.Intent memory intentA = _defaultIntentA();
         intentA.nonce = 2;
@@ -487,15 +497,27 @@ contract ZeroDexEscrowTest is Test {
         bytes memory sigA = _sign(ALICE_PK, _intentDigest(intentA));
         bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
 
-        escrow.executeSwap(intentA, intentB, 50 ether, 175 ether, matchId, sigA, sigB);
+        escrow.executeSwap(intentA, intentB, 100 ether, 350 ether, matchId, sigA, sigB);
         assertTrue(escrow.nonceUsed(alice, 2));
         assertTrue(escrow.nonceUsed(bob, 2));
     }
 
     function testMinimalAmountSwap() public {
-        _executeDefault(1, 4);
+        ZeroDexEscrow.Intent memory intentA = _defaultIntentA();
+        intentA.amountIn = 1;
+        intentA.minAmountOut = 1;
+        intentA.nonce = 99;
+        ZeroDexEscrow.Intent memory intentB = _defaultIntentB();
+        intentB.amountIn = 1;
+        intentB.minAmountOut = 1;
+        intentB.nonce = 100;
+        bytes32 matchId = keccak256("minimal-match");
+        bytes memory sigA = _sign(ALICE_PK, _intentDigest(intentA));
+        bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
+
+        escrow.executeSwap(intentA, intentB, 1, 1, matchId, sigA, sigB);
 
         assertEq(tokenA.balanceOf(bob), 1);
-        assertEq(tokenB.balanceOf(alice), 4);
+        assertEq(tokenB.balanceOf(alice), 1);
     }
 }

@@ -44,12 +44,12 @@ impl SecureVM {
         }
 
         let timeout_dur = Duration::from_millis(self.timeout_ms);
-        let g = graph.clone();
-
-        let result = timeout(timeout_dur, tokio::task::spawn_blocking(move || {
-            let mut vm = VM::new();
-            vm.execute(&g)
-        }))
+        let result = timeout(timeout_dur, async {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut vm = VM::new();
+                vm.execute(graph)
+            }))
+        })
         .await;
 
         match result {
@@ -63,7 +63,7 @@ impl SecureVM {
                 Ok(tensors)
             }
             Ok(Ok(Err(e))) => Err(format!("VM execution error: {e:?}")),
-            Ok(Err(e)) => Err(format!("VM thread panicked: {e:?}")),
+            Ok(Err(_)) => Err("VM thread panicked".to_string()),
             Err(_) => Err(format!(
                 "VM execution timed out after {}ms",
                 self.timeout_ms

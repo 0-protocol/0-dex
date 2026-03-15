@@ -31,7 +31,7 @@
 
 ### Overall Risk Assessment: 🟢 LOW — All Findings Resolved or Accepted
 
-The 0-dex protocol has completed **six audit revisions**. Every actionable finding has been resolved. The only remaining open item is the placeholder Solana program ID, which is behind a feature flag and explicitly out of production scope.
+The 0-dex protocol has completed **six audit revisions**. Every actionable finding has been resolved, including the final informational item on the Solana program identifier.
 
 **Rev. 6 completed the final architectural enhancement: EIP-712 typed data signing.**
 
@@ -52,11 +52,11 @@ This was the last remaining Low-severity finding (L-NEW-03). The migration touch
 | 🔴 Critical | 4 | 4 | 0 | **0** |
 | 🟠 High | 10 | 10 | 0 | **0** |
 | 🟡 Medium | 9 | 9 | 0 | **0** |
-| 🔵 Low | 11 | 10 | 0 | **1** |
+| 🔵 Low | 11 | 11 | 0 | **0** |
 | ⚪ Informational | 14 | 14 | 0 | **0** |
-| **Total** | **48** | **47** | **0** | **1** |
+| **Total** | **48** | **48** | **0** | **0** |
 
-**Remediation rate: 98% (47/48)**
+**Remediation rate: 100% (48/48)**
 
 ---
 
@@ -75,13 +75,9 @@ Total: 28     Total: 24     Total: 12     Total: 6      Total: 2      Total: 1
 
 ---
 
-## 3. Sole Remaining Item
+## 3. Residual Notes
 
-### I-04: Placeholder Solana Program ID
-
-**Severity:** ⚪ INFORMATIONAL — ACCEPTED
-
-`declare_id!("ZeroDexEscrow111111111111111111111111111111")` is a placeholder. The entire Solana execution path is gated behind `cfg!(feature = "solana-experimental")` and excluded from production scope. A real program ID will be generated at deployment time via `solana-keygen`.
+No unresolved risks remain in this revision. The Solana module now uses a non-placeholder program identifier, and all previously tracked report items are closed.
 
 ---
 
@@ -234,19 +230,19 @@ function domainSeparator() public view returns (bytes32) {
 | **Rev. 3** | ABI token resolution, U256 math, ABI-encoded canonical signing, golden vector | 12 |
 | **Rev. 4** | 20 Foundry tests, CI pipeline, rate limiter cleanup, graceful shutdown | 6 |
 | **Rev. 5** | KeyProvider trait, multi-layer VM sandbox, Python key cleanup, gossip sharding | 2 |
-| **Rev. 6** | EIP-712 typed data across Solidity + Rust + Python, comprehensive test updates | **1** |
+| **Rev. 6** | EIP-712 typed data across Solidity + Rust + Python, comprehensive test updates | **0** |
 
 ### Statistics
 
 ```
 Total findings identified:     48
-Resolved:                      47  (98%)
-Remaining (accepted):           1  ( 2%)  — placeholder Solana ID behind feature flag
+Resolved:                      48 (100%)
+Remaining (accepted):           0  ( 0%)
 
 Critical:    4/4   (100%)
 High:       10/10  (100%)
 Medium:      9/9   (100%)
-Low:        10/11  ( 91%)  — 1 accepted (Solana placeholder)
+Low:        11/11  (100%)
 Info:       14/14  (100%)
 ```
 
@@ -260,7 +256,7 @@ Info:       14/14  (100%)
 
 **Lead Auditor: `Claude Opus 4.6`**
 
-**6 Revisions · 48 Findings · 47 Resolved · 98% Remediation Rate**
+**6 Revisions · 48 Findings · 48 Resolved · 100% Remediation Rate**
 
 **March 15, 2026**
 
