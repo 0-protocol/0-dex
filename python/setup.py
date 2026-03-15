@@ -7,6 +7,8 @@ setup(
     packages=find_packages(),
     install_requires=[
         "requests>=2.25.0",
-        "eth-account>=0.8.0"
+        "eth-account>=0.8.0",
+        "eth-abi>=5.0.0",
+        "eth-utils>=2.0.0"
     ],
 )
