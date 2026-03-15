@@ -1,27 +1,18 @@
 //! P2P Gossip Network for distributing 0-lang graphs.
 //!
-//! Supports topic sharding:
-//!   - `0-dex-intents`   — agents publish raw signed intents
-//!   - `0-dex-solutions` — solvers publish verified MatchProof bundles
-//!   - `0-dex-mempool`   — legacy single-topic mode (subscribed by all for backward compat)
+//! Supports optional token-pair topic sharding: intents are published to both the
+//! global `0-dex-mempool` topic and a pair-specific topic like `0-dex/0xAAA-0xBBB`.
 
+use futures::StreamExt;
 use libp2p::{
-    futures::StreamExt,
-    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, Swarm,
-    identity, PeerId, Multiaddr,
+    gossipsub, identity, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux,
+    Multiaddr, PeerId, Swarm,
 };
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use sha3::{Digest, Keccak256};
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
-
-use crate::node_mode::NodeMode;
-
-pub const TOPIC_INTENTS: &str = "0-dex-intents";
-pub const TOPIC_SOLUTIONS: &str = "0-dex-solutions";
-pub const TOPIC_MEMPOOL: &str = "0-dex-mempool";
+use tracing::{error, info, warn};
 
 #[derive(NetworkBehaviour)]
 pub struct DexBehaviour {
@@ -31,21 +22,22 @@ pub struct DexBehaviour {
 
 pub struct GossipNode {
     swarm: Swarm<DexBehaviour>,
-    topics: HashMap<String, gossipsub::IdentTopic>,
-    /// Default publish topic based on node mode
-    publish_topic_name: String,
-    outbound_rx: mpsc::Receiver<Vec<u8>>,
+    global_topic: gossipsub::IdentTopic,
+    pair_topics: HashSet<String>,
+    receiver: mpsc::Receiver<Vec<u8>>,
     inbound_tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl GossipNode {
-    pub fn new(mode: NodeMode) -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>> {
+    pub fn new(
+    ) -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>>
+    {
         let id_keys = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(id_keys.public());
         info!("0-dex local peer id: {peer_id}");
 
-        let (outbound_tx, outbound_rx) = mpsc::channel::<Vec<u8>>(100);
-        let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(100);
+        let (outbound_tx, outbound_rx) = mpsc::channel(100);
+        let (inbound_tx, inbound_rx) = mpsc::channel(256);
 
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id_keys)
             .with_tokio()
@@ -56,9 +48,10 @@ impl GossipNode {
             )?
             .with_behaviour(|key| {
                 let message_id_fn = |message: &gossipsub::Message| {
-                    let mut s = DefaultHasher::new();
-                    message.data.hash(&mut s);
-                    gossipsub::MessageId::from(s.finish().to_string())
+                    let mut hasher = Keccak256::new();
+                    hasher.update(&message.data);
+                    let digest = hasher.finalize();
+                    gossipsub::MessageId::from(hex::encode(digest))
                 };
 
                 let gossipsub_config = gossipsub::ConfigBuilder::default()
@@ -71,49 +64,44 @@ impl GossipNode {
                 let gossipsub = gossipsub::Behaviour::new(
                     gossipsub::MessageAuthenticity::Signed(key.clone()),
                     gossipsub_config,
-                ).expect("Valid config");
+                )
+                .expect("Valid config");
 
-                let mdns = mdns::tokio::Behaviour::new(
-                    mdns::Config::default(),
-                    key.public().to_peer_id(),
-                ).expect("Valid config");
+                let mdns =
+                    mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())
+                        .expect("Valid config");
 
                 DexBehaviour { gossipsub, mdns }
             })?
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
-        let mut topics = HashMap::new();
-        for name in [TOPIC_INTENTS, TOPIC_SOLUTIONS, TOPIC_MEMPOOL] {
-            let topic = gossipsub::IdentTopic::new(name);
-            topics.insert(name.to_string(), topic);
-        }
-
-        // Subscribe based on node mode
-        let publish_topic_name = match mode {
-            NodeMode::Agent => {
-                // Agent listens on solutions + legacy mempool, publishes to intents
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_SOLUTIONS])?;
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_MEMPOOL])?;
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_INTENTS])?;
-                TOPIC_INTENTS.to_string()
-            }
-            NodeMode::Solver => {
-                // Solver listens on intents + legacy mempool, publishes to solutions
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_INTENTS])?;
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_MEMPOOL])?;
-                swarm.behaviour_mut().gossipsub.subscribe(&topics[TOPIC_SOLUTIONS])?;
-                TOPIC_SOLUTIONS.to_string()
-            }
-        };
-
-        info!("Subscribed to gossip topics (mode={mode}), default publish topic: {publish_topic_name}");
+        let global_topic = gossipsub::IdentTopic::new("0-dex-mempool");
+        swarm.behaviour_mut().gossipsub.subscribe(&global_topic)?;
 
         Ok((
-            Self { swarm, topics, publish_topic_name, outbound_rx, inbound_tx },
+            Self {
+                swarm,
+                global_topic,
+                pair_topics: HashSet::new(),
+                receiver: outbound_rx,
+                inbound_tx: inbound_tx.clone(),
+            },
             outbound_tx,
             inbound_rx,
         ))
+    }
+
+    pub fn subscribe_pair(&mut self, pair_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let topic_name = format!("0-dex/{pair_id}");
+        if self.pair_topics.contains(&topic_name) {
+            return Ok(());
+        }
+        let topic = gossipsub::IdentTopic::new(&topic_name);
+        self.swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
+        self.pair_topics.insert(topic_name.clone());
+        info!("Subscribed to pair topic: {topic_name}");
+        Ok(())
     }
 
     pub fn listen_on(&mut self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -122,19 +110,53 @@ impl GossipNode {
         Ok(())
     }
 
+    pub fn broadcast_graph(
+        &mut self,
+        graph_payload: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Err(e) = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(self.global_topic.clone(), graph_payload.clone())
+        {
+            error!("Error publishing to global topic: {:?}", e);
+            return Err(Box::new(e));
+        }
+
+        if let Ok(intent) = serde_json::from_slice::<serde_json::Value>(&graph_payload) {
+            if let Some(pair_topic) = derive_pair_topic(&intent) {
+                if self.pair_topics.contains(&pair_topic) {
+                    let topic = gossipsub::IdentTopic::new(&pair_topic);
+                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, graph_payload) {
+                        warn!("Failed to publish to pair topic {pair_topic}: {e:?}");
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn run(mut self) {
         loop {
             tokio::select! {
+                Some(payload) = self.receiver.recv() => {
+                    if let Err(e) = self.broadcast_graph(payload) {
+                        error!("Failed to publish outbound gossip payload: {e}");
+                    }
+                }
                 event = self.swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(DexBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                             for (peer_id, multiaddr) in list {
-                                info!("mDNS discovered peer: {peer_id} @ {multiaddr}");
+                                info!("mDNS discovered a new peer: {peer_id} @ {multiaddr}");
                                 self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                             }
                         }
                         SwarmEvent::Behaviour(DexBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
-                            for (peer_id, _) in list {
+                            for (peer_id, _multiaddr) in list {
+                                info!("mDNS discover peer has expired: {peer_id}");
                                 self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                             }
                         }
@@ -143,9 +165,7 @@ impl GossipNode {
                             message_id: id,
                             message,
                         })) => {
-                            let topic_str = message.topic.as_str();
-                            info!("Got message id={id} from peer={peer_id} topic={topic_str}");
-                            crate::metrics::INTENTS_RECEIVED.inc();
+                            info!("Got intent graph with id: {id} from peer: {peer_id}");
                             let _ = self.inbound_tx.send(message.data).await;
                         }
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -154,17 +174,18 @@ impl GossipNode {
                         _ => {}
                     }
                 }
-                Some(payload) = self.outbound_rx.recv() => {
-                    if let Some(topic) = self.topics.get(&self.publish_topic_name) {
-                        if let Err(e) = {
-                            crate::metrics::INTENTS_PUBLISHED.inc();
-                            self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), payload)
-                        } {
-                            warn!("Failed to publish to {}: {:?}", self.publish_topic_name, e);
-                        }
-                    }
-                }
             }
         }
     }
+}
+
+fn derive_pair_topic(value: &serde_json::Value) -> Option<String> {
+    let base = value.get("base_token")?.as_str()?.to_ascii_lowercase();
+    let quote = value.get("quote_token")?.as_str()?.to_ascii_lowercase();
+    let (a, b) = if base < quote {
+        (base, quote)
+    } else {
+        (quote, base)
+    };
+    Some(format!("0-dex/{a}-{b}"))
 }

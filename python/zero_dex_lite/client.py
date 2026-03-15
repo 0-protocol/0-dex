@@ -1,74 +1,185 @@
+import ctypes
 import requests
-import json
+from typing import Optional
+from eth_abi import encode
 from eth_account import Account
-from eth_account._utils.signing import sign_message_hash
+from eth_account.messages import SignableMessage
+from eth_utils import keccak, to_checksum_address
 
-try:
-    from eth_utils import keccak
-except ImportError:
-    from Crypto.Hash import keccak as _keccak
-    def keccak(primitive: bytes) -> bytes:
-        k = _keccak.new(digest_bits=256)
-        k.update(primitive)
-        return k.digest()
+PROTOCOL_VERSION = "0-dex-v1"
+EIP712_DOMAIN_TYPE = b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+INTENT_TYPE = b"Intent(address owner,address tokenIn,address tokenOut,uint256 amountIn,uint256 minAmountOut,uint256 nonce,uint256 deadline)"
+DOMAIN_NAME = b"ZeroDexEscrow"
+DOMAIN_VERSION = b"1"
+
+
+def _try_zero_bytes(b: bytes) -> None:
+    try:
+        buf = (ctypes.c_char * len(b)).from_address(id(b) + bytes.__basicsize__)
+        ctypes.memset(buf, 0, len(b))
+    except Exception:
+        pass
 
 
 class LiteClient:
     """
     Zero-Friction Python Client for 0-dex.
-    Allows any Agent to trade by speaking .0 graphs without knowing Rust or libp2p.
     """
-    def __init__(self, private_key: str, gateway: str = "http://127.0.0.1:8080"):
+
+    def __init__(self, private_key: str, gateway: str = "http://127.0.0.1:8080", chain_id: int = 1):
         self.gateway = gateway
+        self.chain_id = chain_id
+        self._raw_key: Optional[bytes] = bytes.fromhex(private_key.replace("0x", ""))
         self.account = Account.from_key(private_key)
 
-    def _sign_intent(self, graph_content: str) -> dict:
-        """
-        Signs the graph with the exact hashing scheme the Rust node expects:
-          keccak256("\\x190-dex Intent:\\n" + str(len(graph_content)) + graph_content)
-        No additional Ethereum signed-message wrapping.
-        """
-        prefix = f"\x190-dex Intent:\n{len(graph_content)}"
-        raw = (prefix + graph_content).encode("utf-8")
-        msg_hash = keccak(primitive=raw)
+    def close(self) -> None:
+        if self._raw_key is not None:
+            _try_zero_bytes(self._raw_key)
+            self._raw_key = None
 
-        sig_obj = sign_message_hash(self.account.key, msg_hash)
-        # sig_obj has .v, .r, .s — pack into 65-byte [r(32) || s(32) || v(1)]
-        r_bytes = sig_obj.r.to_bytes(32, "big")
-        s_bytes = sig_obj.s.to_bytes(32, "big")
-        v_byte = sig_obj.v.to_bytes(1, "big")
-        signature_hex = (r_bytes + s_bytes + v_byte).hex()
+    def __enter__(self):
+        return self
 
-        return {
-            "graph_content": graph_content,
+    def __exit__(self, *_):
+        self.close()
+
+    def _sign_intent(
+        self,
+        graph_content: str,
+        verifying_contract: str,
+        base_token: str,
+        quote_token: str,
+        side: str,
+        amount_in: int,
+        min_amount_out: int,
+        nonce: int,
+        deadline_unix: int,
+    ) -> dict:
+        payload = {
+            "version": PROTOCOL_VERSION,
+            "chain_id": self.chain_id,
+            "nonce": nonce,
+            "deadline_unix": deadline_unix,
             "owner_address": self.account.address,
-            "signature_hex": signature_hex,
+            "verifying_contract": verifying_contract,
+            "base_token": base_token,
+            "quote_token": quote_token,
+            "side": side.lower(),
+            "amount_in": int(amount_in),
+            "min_amount_out": int(min_amount_out),
+            "graph_content": graph_content,
         }
+        domain_separator, struct_hash = self._eip712_components(payload)
+        signable = SignableMessage(version=b"", header=domain_separator, body=struct_hash)
+        signed_message = self.account.sign_message(signable)
 
-    def broadcast_intent(self, graph_content: str) -> dict:
-        """
-        Signs the graph and broadcasts it to the P2P Gossip network via the local node/gateway.
-        """
-        signed_payload = self._sign_intent(graph_content)
-        
-        if self.gateway == "mock":
-            # Simulate a successful network broadcast for testing/devnet without needing a real DNS/node
-            return {
-                "status": "success",
-                "message": "Intent cryptographically signed and mocked to Devnet mempool.",
-                "mocked": True,
-                "tx_hash": f"0x...mock...{signed_payload['signature_hex'][:8]}"
-            }
+        signed_payload = dict(payload)
+        signed_payload["signature_hex"] = "0x" + signed_message.signature.hex()
+        return signed_payload
+
+    def broadcast_intent(
+        self,
+        graph_content: str,
+        verifying_contract: str,
+        base_token: str,
+        quote_token: str,
+        side: str,
+        amount_in: int,
+        min_amount_out: int,
+        nonce: int,
+        deadline_unix: int,
+        api_key: Optional[str] = None,
+    ) -> dict:
+        signed_payload = self._sign_intent(
+            graph_content=graph_content,
+            verifying_contract=verifying_contract,
+            base_token=base_token,
+            quote_token=quote_token,
+            side=side,
+            amount_in=amount_in,
+            min_amount_out=min_amount_out,
+            nonce=nonce,
+            deadline_unix=deadline_unix,
+        )
 
         url = f"{self.gateway.rstrip('/')}/intent"
-        try:
-            response = requests.post(url, json=signed_payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Failed to broadcast intent: {e}")
+        headers = {}
+        if api_key:
+            headers["x-zero-dex-api-key"] = api_key
+        response = requests.post(url, json=signed_payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
 
-    def broadcast_intent_from_file(self, filepath: str) -> dict:
+    def broadcast_intent_from_file(
+        self,
+        filepath: str,
+        verifying_contract: str,
+        base_token: str,
+        quote_token: str,
+        side: str,
+        amount_in: int,
+        min_amount_out: int,
+        nonce: int,
+        deadline_unix: int,
+        api_key: Optional[str] = None,
+    ) -> dict:
         with open(filepath, "r") as f:
             content = f.read()
-        return self.broadcast_intent(content)
+        return self.broadcast_intent(
+            graph_content=content,
+            verifying_contract=verifying_contract,
+            base_token=base_token,
+            quote_token=quote_token,
+            side=side,
+            amount_in=amount_in,
+            min_amount_out=min_amount_out,
+            nonce=nonce,
+            deadline_unix=deadline_unix,
+            api_key=api_key,
+        )
+
+    def _eip712_components(self, payload: dict) -> tuple:
+        token_in, token_out = self._resolved_tokens(payload["side"], payload["base_token"], payload["quote_token"])
+
+        domain_separator = keccak(
+            encode(
+                ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+                [
+                    keccak(EIP712_DOMAIN_TYPE),
+                    keccak(DOMAIN_NAME),
+                    keccak(DOMAIN_VERSION),
+                    int(payload["chain_id"]),
+                    to_checksum_address(payload["verifying_contract"]),
+                ],
+            )
+        )
+
+        struct_hash = keccak(
+            encode(
+                ["bytes32", "address", "address", "address", "uint256", "uint256", "uint256", "uint256"],
+                [
+                    keccak(INTENT_TYPE),
+                    to_checksum_address(payload["owner_address"]),
+                    to_checksum_address(token_in),
+                    to_checksum_address(token_out),
+                    int(payload["amount_in"]),
+                    int(payload["min_amount_out"]),
+                    int(payload["nonce"]),
+                    int(payload["deadline_unix"]),
+                ],
+            )
+        )
+        return domain_separator, struct_hash
+
+    def eip712_digest(self, payload: dict) -> bytes:
+        domain_separator, struct_hash = self._eip712_components(payload)
+        return keccak(b"" + domain_separator + struct_hash)
+
+    @staticmethod
+    def _resolved_tokens(side: str, base_token: str, quote_token: str):
+        normalized = side.lower()
+        if normalized == "sell":
+            return base_token, quote_token
+        if normalized == "buy":
+            return quote_token, base_token
+        raise ValueError(f"Unsupported side: {side}")

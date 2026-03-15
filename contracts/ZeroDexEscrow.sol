@@ -1,127 +1,129 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 }
 
-/**
- * @title ZeroDexEscrow
- * @dev The settlement layer for the 0-dex Agent-Native P2P network.
- * 
- * Agents match intents off-chain using 0-lang Tensor intersections. Once a 
- * match is found, the SettlementEngine bundles their signatures and submits 
- * them here to execute the atomic swap.
- */
 contract ZeroDexEscrow {
-    
-    bytes32 public DOMAIN_SEPARATOR;
-    bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(address giveToken,address receiveToken,uint256 giveAmount,uint256 receiveAmount,uint256 nonce)"
-    );
+    struct Intent {
+        address owner;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 minAmountOut;
+        uint256 nonce;
+        uint256 deadline;
+        uint256 chainId;
+    }
 
-    mapping(address => uint256) public nonces;
-    
-    // Reentrancy guard
-    uint256 private _status;
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
+    bytes32 public constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    bytes32 public constant INTENT_TYPEHASH =
+        keccak256("Intent(address owner,address tokenIn,address tokenOut,uint256 amountIn,uint256 minAmountOut,uint256 nonce,uint256 deadline)");
+
+    bytes32 private constant NAME_HASH = keccak256("ZeroDexEscrow");
+    bytes32 private constant VERSION_HASH = keccak256("1");
+
+    mapping(address => mapping(uint256 => bool)) public nonceUsed;
+    mapping(bytes32 => bool) public matchExecuted;
+    uint256 private _lock = 1;
+
+    error InvalidIntent();
+    error InvalidSignature();
+    error NonceAlreadyUsed();
+    error IntentExpired();
+    error ChainIdMismatch();
+    error MatchAlreadyExecuted();
+    error ReentrancyBlocked();
+    error TransferFailed();
 
     event TradeSettled(
-        address indexed partyA, 
-        address indexed partyB, 
-        address tokenA, 
-        address tokenB, 
-        uint256 amountA, 
-        uint256 amountB
-    );
-
-    constructor() {
-        uint256 chainId;
-        assembly {
-            chainId := chainid()
-        }
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes("0-dex Escrow")),
-                keccak256(bytes("1")),
-                chainId,
-                address(this)
-            )
-        );
-        _status = _NOT_ENTERED;
-    }
-
-    modifier nonReentrant() {
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-        _status = _ENTERED;
-        _;
-        _status = _NOT_ENTERED;
-    }
-
-    /**
-     * @notice Executes an atomic swap between two Agents whose 0-lang graphs intersected.
-     * @param partyA The address of the first Agent.
-     * @param partyB The address of the second Agent.
-     * @param tokenA The address of the ERC20 token partyA is giving.
-     * @param tokenB The address of the ERC20 token partyB is giving.
-     * @param amountA The amount of tokenA.
-     * @param amountB The amount of tokenB.
-     * @param signatureA The cryptographic signature of partyA's intent.
-     * @param signatureB The cryptographic signature of partyB's intent.
-     */
-    function executeSwap(
-        address partyA,
-        address partyB,
+        bytes32 indexed matchId,
+        address indexed partyA,
+        address indexed partyB,
         address tokenA,
         address tokenB,
         uint256 amountA,
+        uint256 amountB
+    );
+
+    modifier nonReentrant() {
+        if (_lock != 1) revert ReentrancyBlocked();
+        _lock = 2;
+        _;
+        _lock = 1;
+    }
+
+    function executeSwap(
+        Intent calldata intentA,
+        Intent calldata intentB,
+        uint256 amountA,
         uint256 amountB,
+        bytes32 matchId,
         bytes calldata signatureA,
         bytes calldata signatureB
     ) external nonReentrant {
-        // 1. Verify EIP-712 signatures for both parties
-        _verifySignature(partyA, tokenA, tokenB, amountA, amountB, nonces[partyA]++, signatureA);
-        _verifySignature(partyB, tokenB, tokenA, amountB, amountA, nonces[partyB]++, signatureB);
-        
-        // 2. Perform the atomic swap
-        require(IERC20(tokenA).transferFrom(partyA, partyB, amountA), "TokenA transfer failed");
-        require(IERC20(tokenB).transferFrom(partyB, partyA, amountB), "TokenB transfer failed");
-        
-        emit TradeSettled(partyA, partyB, tokenA, tokenB, amountA, amountB);
+        _validateIntent(intentA);
+        _validateIntent(intentB);
+
+        if (intentA.owner == intentB.owner) revert InvalidIntent();
+        if (intentA.tokenIn != intentB.tokenOut || intentA.tokenOut != intentB.tokenIn) revert InvalidIntent();
+        if (amountA > intentA.amountIn || amountB > intentB.amountIn) revert InvalidIntent();
+        if (amountB < intentA.minAmountOut || amountA < intentB.minAmountOut) revert InvalidIntent();
+        if (matchExecuted[matchId]) revert MatchAlreadyExecuted();
+
+        bytes32 digestA = _intentDigest(intentA);
+        bytes32 digestB = _intentDigest(intentB);
+        _verifySignature(intentA.owner, digestA, signatureA);
+        _verifySignature(intentB.owner, digestB, signatureB);
+
+        nonceUsed[intentA.owner][intentA.nonce] = true;
+        nonceUsed[intentB.owner][intentB.nonce] = true;
+        matchExecuted[matchId] = true;
+
+        _safeTransferFrom(intentA.tokenIn, intentA.owner, intentB.owner, amountA);
+        _safeTransferFrom(intentB.tokenIn, intentB.owner, intentA.owner, amountB);
+
+        emit TradeSettled(matchId, intentA.owner, intentB.owner, intentA.tokenIn, intentB.tokenIn, amountA, amountB);
     }
 
-    function _verifySignature(
-        address signer,
-        address giveToken,
-        address receiveToken,
-        uint256 giveAmount,
-        uint256 receiveAmount,
-        uint256 nonce,
-        bytes calldata signature
-    ) internal view {
-        require(signature.length == 65, "Invalid signature length");
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(abi.encode(
+            EIP712_DOMAIN_TYPEHASH,
+            NAME_HASH,
+            VERSION_HASH,
+            block.chainid,
+            address(this)
+        ));
+    }
 
-        bytes32 structHash = keccak256(
-            abi.encode(
-                INTENT_TYPEHASH,
-                giveToken,
-                receiveToken,
-                giveAmount,
-                receiveAmount,
-                nonce
-            )
-        );
+    function _validateIntent(Intent calldata intent) internal view {
+        if (intent.owner == address(0) || intent.tokenIn == address(0) || intent.tokenOut == address(0)) {
+            revert InvalidIntent();
+        }
+        if (intent.deadline < block.timestamp) revert IntentExpired();
+        if (intent.chainId != block.chainid) revert ChainIdMismatch();
+        if (nonceUsed[intent.owner][intent.nonce]) revert NonceAlreadyUsed();
+    }
 
-        bytes32 digest = keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                DOMAIN_SEPARATOR,
-                structHash
-            )
-        );
+    function _intentDigest(Intent calldata intent) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(
+            INTENT_TYPEHASH,
+            intent.owner,
+            intent.tokenIn,
+            intent.tokenOut,
+            intent.amountIn,
+            intent.minAmountOut,
+            intent.nonce,
+            intent.deadline
+        ));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
 
+    function _verifySignature(address expectedSigner, bytes32 digest, bytes calldata signature) internal pure {
+        if (signature.length != 65) revert InvalidSignature();
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -130,8 +132,22 @@ contract ZeroDexEscrow {
             s := calldataload(add(signature.offset, 32))
             v := byte(0, calldataload(add(signature.offset, 64)))
         }
+        if (v < 27) v += 27;
+        if (v != 27 && v != 28) revert InvalidSignature();
+        address recovered = ecrecover(digest, v, r, s);
+        if (recovered == address(0) || recovered != expectedSigner) revert InvalidSignature();
+    }
 
-        address recoveredSigner = ecrecover(digest, v, r, s);
-        require(recoveredSigner != address(0) && recoveredSigner == signer, "Invalid signature");
+    function _safeTransferFrom(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    ) internal {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+        );
+        if (!success) revert TransferFailed();
+        if (data.length > 0 && !abi.decode(data, (bool))) revert TransferFailed();
     }
 }

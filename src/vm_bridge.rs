@@ -1,38 +1,85 @@
 //! Secure isolation sandbox for running untrusted counterparty graphs.
+//!
+//! Defence layers:
+//! 1. Serialized size budget.
+//! 2. Execution timeout.
+//! 3. Panic isolation.
+//! 4. Output sanity limits.
 
-use zerolang::{RuntimeGraph, VM};
-use tokio::time::timeout;
 use std::time::Duration;
+use tokio::time::timeout;
+use zerolang::{RuntimeGraph, VM};
+
+const DEFAULT_MAX_SERIALIZED_BYTES: usize = 256 * 1024;
+const DEFAULT_TIMEOUT_MS: u64 = 200;
 
 pub struct SecureVM {
-    /// Max ops allowed for untrusted graphs (gas limit equivalent)
-    max_ops: usize,
-    /// Execution timeout
+    max_serialized_bytes: usize,
     timeout_ms: u64,
 }
 
 impl SecureVM {
-    pub fn new(max_ops: usize, timeout_ms: u64) -> Self {
-        Self { max_ops, timeout_ms }
+    pub fn new(max_serialized_bytes: usize, timeout_ms: u64) -> Self {
+        Self {
+            max_serialized_bytes,
+            timeout_ms,
+        }
     }
 
-    /// Evaluates a counterparty graph in a sandboxed, time-bounded environment.
-    /// Takes ownership of the graph to move it into the blocking task.
-    pub async fn evaluate_untrusted(&self, graph: RuntimeGraph) -> Result<Vec<zerolang::Tensor>, String> {
-        let timeout_ms = self.timeout_ms;
+    pub fn default_limits() -> Self {
+        Self::new(DEFAULT_MAX_SERIALIZED_BYTES, DEFAULT_TIMEOUT_MS)
+    }
 
-        let result = timeout(Duration::from_millis(timeout_ms), {
-            tokio::task::spawn_blocking(move || {
-                let mut vm = VM::new();
-                vm.execute(&graph)
-            })
-        }).await;
+    pub async fn evaluate_untrusted(
+        &self,
+        graph: &RuntimeGraph,
+    ) -> Result<Vec<zerolang::Tensor>, String> {
+        let serialized = format!("{graph:?}");
+        if serialized.len() > self.max_serialized_bytes {
+            return Err(format!(
+                "Graph serialized size {}B exceeds limit {}B",
+                serialized.len(),
+                self.max_serialized_bytes
+            ));
+        }
+
+        let timeout_dur = Duration::from_millis(self.timeout_ms);
+        let g = graph.clone();
+
+        let result = timeout(timeout_dur, tokio::task::spawn_blocking(move || {
+            let mut vm = VM::new();
+            vm.execute(&g)
+        }))
+        .await;
 
         match result {
-            Ok(Ok(Ok(tensors))) => Ok(tensors),
-            Ok(Ok(Err(e))) => Err(format!("VM Execution error: {:?}", e)),
-            Ok(Err(e)) => Err(format!("Task panic: {:?}", e)),
-            Err(_) => Err("VM Execution Timeout (Gas limit exceeded)".to_string()),
+            Ok(Ok(Ok(tensors))) => {
+                if tensors.len() > 1024 {
+                    return Err(format!(
+                        "VM produced {} output tensors — exceeds sanity limit",
+                        tensors.len()
+                    ));
+                }
+                Ok(tensors)
+            }
+            Ok(Ok(Err(e))) => Err(format!("VM execution error: {e:?}")),
+            Ok(Err(e)) => Err(format!("VM thread panicked: {e:?}")),
+            Err(_) => Err(format!(
+                "VM execution timed out after {}ms",
+                self.timeout_ms
+            )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_limits_are_sane() {
+        let vm = SecureVM::default_limits();
+        assert_eq!(vm.max_serialized_bytes, 256 * 1024);
+        assert_eq!(vm.timeout_ms, 200);
     }
 }
