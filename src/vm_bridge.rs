@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Secure isolation sandbox for running untrusted counterparty graphs.
 //!
 //! Defence layers:

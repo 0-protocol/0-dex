@@ -1,5 +1,15 @@
 # 0-dex Development Plan
 
+> **Status note (Mainnet v0):** Historical sections below include exploratory roadmap items and completed-check claims that are not part of the current mainnet launch surface. For launch truth, use `MAINNET_SCOPE.md` and `MAINNET_GATES.md` as the source of record.
+
+## Current Docs Task
+- [x] Study `0-ads/README.md` disclaimer style and tone
+- [x] Add an explicit experimental-risk disclaimer to `0-dex/README.md`
+- [x] Review wording for consistency with the repo's agent-native voice
+- [x] Add a top-level status box to `0-dex/README.md`
+- [x] Tighten the opening product description and reduce repeated manifesto copy
+- [x] Make devnet / mock / experimental status more explicit in the quick-start narrative
+
 ## Codebase Assessment
 
 **0-dex** is an agent-native decentralized exchange where AI agents trade directly via P2P gossip + 0-lang tensor graph intersections. Status: **early devnet / skeleton**.

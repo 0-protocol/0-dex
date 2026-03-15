@@ -8,6 +8,8 @@ from zero_dex_lite.client import (
 )
 from eth_utils import keccak
 from eth_abi import encode
+from pathlib import Path
+import json
 
 
 def test_signed_payload_shape():
@@ -106,3 +108,28 @@ def test_context_manager_cleanup():
     ) as client:
         assert client._raw_key is not None
     assert client._raw_key is None
+
+
+def test_golden_signing_vector():
+    vector_path = Path(__file__).resolve().parents[2] / "testdata" / "signing_vector.json"
+    vector = json.loads(vector_path.read_text())
+    client = LiteClient(
+        private_key=vector["private_key"],
+        gateway="http://127.0.0.1:8080",
+        chain_id=vector["payload"]["chain_id"],
+    )
+    digest = client.eip712_digest(vector["payload"])
+    assert "0x" + digest.hex() == vector["digest_hex"]
+
+    signed = client._sign_intent(
+        graph_content=vector["payload"]["graph_content"],
+        verifying_contract=vector["payload"]["verifying_contract"],
+        base_token=vector["payload"]["base_token"],
+        quote_token=vector["payload"]["quote_token"],
+        side=vector["payload"]["side"],
+        amount_in=vector["payload"]["amount_in"],
+        min_amount_out=vector["payload"]["min_amount_out"],
+        nonce=vector["payload"]["nonce"],
+        deadline_unix=vector["payload"]["deadline_unix"],
+    )
+    assert signed["signature_hex"] == vector["signature_hex"]

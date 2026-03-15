@@ -50,6 +50,7 @@ pub struct SettlementEngine {
     escrow_address: Address,
     match_receiver: mpsc::Receiver<MatchProof>,
     key_provider: Option<Box<dyn KeyProvider>>,
+    allow_simulation: bool,
 }
 
 impl SettlementEngine {
@@ -58,32 +59,41 @@ impl SettlementEngine {
         chain_id: u64,
         escrow_address: &str,
         match_receiver: mpsc::Receiver<MatchProof>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let key_provider = EnvKeyProvider::from_env();
+        let allow_simulation = std::env::var("ZERO_DEX_ALLOW_SIMULATION")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         let parsed = escrow_address
             .parse::<Address>()
             .unwrap_or_else(|_| Address::zero());
         if key_provider.is_none() {
-            warn!("No relayer key provider configured — settlements will be simulated");
+            if allow_simulation {
+                warn!("No relayer key provider configured — settlements will be simulated");
+            } else {
+                return Err(
+                    "ZERO_DEX_RELAYER_KEY is required (or set ZERO_DEX_ALLOW_SIMULATION=true for non-production)"
+                        .to_string(),
+                );
+            }
         }
-        Self {
+        Ok(Self {
             rpc_url: rpc_url.to_string(),
             chain_id,
             escrow_address: parsed,
             match_receiver,
             key_provider,
-        }
-    }
-
-    pub fn with_key_provider(mut self, provider: Box<dyn KeyProvider>) -> Self {
-        self.key_provider = Some(provider);
-        self
+            allow_simulation,
+        })
     }
 
     pub async fn run(mut self) {
         info!(
-            "Settlement engine listening on rpc={} chain_id={} escrow={:?}",
-            self.rpc_url, self.chain_id, self.escrow_address
+            "Settlement engine listening on rpc={} chain_id={} escrow={:?} mode={}",
+            self.rpc_url,
+            self.chain_id,
+            self.escrow_address,
+            self.mode_name()
         );
 
         while let Some(match_proof) = self.match_receiver.recv().await {
@@ -91,17 +101,28 @@ impl SettlementEngine {
                 "Received new match proof for settlement: {}",
                 match_proof.match_id
             );
-            self.execute_swap(match_proof).await;
+            if let Err(e) = self.execute_swap(match_proof).await {
+                error!("Settlement failed: {e}");
+            }
         }
     }
 
-    async fn execute_swap(&self, proof: MatchProof) {
+    pub fn mode_name(&self) -> &'static str {
+        if self.key_provider.is_some() {
+            "onchain"
+        } else if self.allow_simulation {
+            "simulation"
+        } else {
+            "disabled"
+        }
+    }
+
+    async fn execute_swap(&self, proof: MatchProof) -> Result<(), String> {
         debug!("Preparing settlement tx for match_id={}", proof.match_id);
         let encoded_data = match crate::abi::encode_match_for_evm(&proof) {
             Ok(data) => data,
             Err(e) => {
-                error!("Failed to encode ABI payload for settlement: {}", e);
-                return;
+                return Err(format!("Failed to encode ABI payload for settlement: {e}"));
             }
         };
         info!(
@@ -110,30 +131,33 @@ impl SettlementEngine {
         );
 
         let Some(ref key_provider) = self.key_provider else {
-            info!("No key provider. Simulating settlement for match_id={}", proof.match_id);
+            if !self.allow_simulation {
+                return Err("Missing relayer key and simulation is disabled".to_string());
+            }
+            info!(
+                "No key provider. Simulating settlement for match_id={}",
+                proof.match_id
+            );
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             info!("Trade Settled (Simulated)! match_id={}", proof.match_id);
-            return;
+            return Ok(());
         };
 
         if self.escrow_address == Address::zero() {
-            error!("Escrow address is zero. Refusing to broadcast.");
-            return;
+            return Err("Escrow address is zero. Refusing to broadcast.".to_string());
         }
 
         let wallet = match key_provider.get_wallet(self.chain_id).await {
             Ok(w) => w,
             Err(e) => {
-                error!("Key provider error: {}", e);
-                return;
+                return Err(format!("Key provider error: {e}"));
             }
         };
 
         let provider = match Provider::<Http>::try_from(self.rpc_url.as_str()) {
             Ok(p) => p,
             Err(e) => {
-                error!("Failed to connect to RPC provider: {}", e);
-                return;
+                return Err(format!("Failed to connect to RPC provider: {e}"));
             }
         };
 
@@ -143,20 +167,29 @@ impl SettlementEngine {
             .data(encoded_data);
 
         info!("Submitting atomic swap transaction to the blockchain");
-        let pending_tx = match client.send_transaction(tx, None).await {
+        let submission = client.send_transaction(tx, None).await;
+        let pending_tx = match submission {
             Ok(pending_tx) => pending_tx,
             Err(e) => {
-                error!("Failed to broadcast transaction: {}", e);
-                return;
+                return Err(format!("Failed to broadcast transaction: {e}"));
             }
         };
         info!("Trade submitted! Tx Hash: {:?}", pending_tx.tx_hash());
-        if let Ok(Some(receipt)) = pending_tx.await {
-            info!(
-                "Trade Settled On-Chain in block {} for match_id={}",
-                receipt.block_number.unwrap_or_default(),
-                proof.match_id
-            );
+        let receipt = pending_tx
+            .await
+            .map_err(|e| format!("Failed waiting for transaction receipt: {e}"))?
+            .ok_or_else(|| "No transaction receipt returned".to_string())?;
+        if receipt.status != Some(U64::from(1u64)) {
+            return Err(format!(
+                "Settlement transaction reverted or failed. tx_hash={:?} status={:?}",
+                receipt.transaction_hash, receipt.status
+            ));
         }
+        info!(
+            "Trade Settled On-Chain in block {} for match_id={}",
+            receipt.block_number.unwrap_or_default(),
+            proof.match_id
+        );
+        Ok(())
     }
 }

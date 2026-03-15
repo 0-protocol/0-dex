@@ -14,6 +14,7 @@ This file is the minimum gate for code reviews and release approvals.
 ## Node-Level Invariants
 
 - **IngressInvariant:** API accepts only `SignedIntent` payloads that pass schema and size checks.
+- **DeterministicIngressInvariant:** API-submitted intents are enqueued to local matching immediately (not dependent on gossip self-echo).
 - **CryptoInvariant:** Rust and Python derive the same signing payload bytes and digest.
 - **MatchInvariant:** matching uses token pair, side, and price bounds, not confidence-only heuristics.
 - **DoSInvariant:** payload size, queue pressure, and VM limits are enforced.

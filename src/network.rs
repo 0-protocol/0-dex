@@ -10,9 +10,29 @@ use libp2p::{
 };
 use sha3::{Digest, Keccak256};
 use std::collections::HashSet;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
+
+const DEFAULT_MAX_GOSSIP_BYTES: usize = 48 * 1024;
+
+pub struct GossipConfig {
+    pub identity_key_file: Option<PathBuf>,
+    pub bootstrap_peers: Vec<Multiaddr>,
+    pub max_gossip_bytes: usize,
+}
+
+impl Default for GossipConfig {
+    fn default() -> Self {
+        Self {
+            identity_key_file: None,
+            bootstrap_peers: Vec::new(),
+            max_gossip_bytes: DEFAULT_MAX_GOSSIP_BYTES,
+        }
+    }
+}
 
 #[derive(NetworkBehaviour)]
 pub struct DexBehaviour {
@@ -26,13 +46,14 @@ pub struct GossipNode {
     pair_topics: HashSet<String>,
     receiver: mpsc::Receiver<Vec<u8>>,
     inbound_tx: mpsc::Sender<Vec<u8>>,
+    max_gossip_bytes: usize,
 }
 
+type GossipChannels = (GossipNode, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>);
+
 impl GossipNode {
-    pub fn new(
-    ) -> Result<(Self, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>), Box<dyn std::error::Error>>
-    {
-        let id_keys = identity::Keypair::generate_ed25519();
+    pub fn new(config: GossipConfig) -> Result<GossipChannels, Box<dyn std::error::Error>> {
+        let id_keys = load_or_generate_identity(config.identity_key_file.clone())?;
         let peer_id = PeerId::from(id_keys.public());
         info!("0-dex local peer id: {peer_id}");
 
@@ -78,6 +99,13 @@ impl GossipNode {
 
         let global_topic = gossipsub::IdentTopic::new("0-dex-mempool");
         swarm.behaviour_mut().gossipsub.subscribe(&global_topic)?;
+        for bootstrap in &config.bootstrap_peers {
+            if let Err(e) = swarm.dial(bootstrap.clone()) {
+                warn!("Failed to dial bootstrap peer {bootstrap}: {e}");
+            } else {
+                info!("Dialing bootstrap peer: {bootstrap}");
+            }
+        }
 
         Ok((
             Self {
@@ -86,22 +114,11 @@ impl GossipNode {
                 pair_topics: HashSet::new(),
                 receiver: outbound_rx,
                 inbound_tx: inbound_tx.clone(),
+                max_gossip_bytes: config.max_gossip_bytes,
             },
             outbound_tx,
             inbound_rx,
         ))
-    }
-
-    pub fn subscribe_pair(&mut self, pair_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let topic_name = format!("0-dex/{pair_id}");
-        if self.pair_topics.contains(&topic_name) {
-            return Ok(());
-        }
-        let topic = gossipsub::IdentTopic::new(&topic_name);
-        self.swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
-        self.pair_topics.insert(topic_name.clone());
-        info!("Subscribed to pair topic: {topic_name}");
-        Ok(())
     }
 
     pub fn listen_on(&mut self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -128,7 +145,12 @@ impl GossipNode {
             if let Some(pair_topic) = derive_pair_topic(&intent) {
                 if self.pair_topics.contains(&pair_topic) {
                     let topic = gossipsub::IdentTopic::new(&pair_topic);
-                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, graph_payload) {
+                    if let Err(e) = self
+                        .swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(topic, graph_payload)
+                    {
                         warn!("Failed to publish to pair topic {pair_topic}: {e:?}");
                     }
                 }
@@ -166,6 +188,14 @@ impl GossipNode {
                             message,
                         })) => {
                             info!("Got intent graph with id: {id} from peer: {peer_id}");
+                            if message.data.len() > self.max_gossip_bytes {
+                                warn!(
+                                    "Dropping oversized gossip payload: {} bytes (max {})",
+                                    message.data.len(),
+                                    self.max_gossip_bytes
+                                );
+                                continue;
+                            }
                             let _ = self.inbound_tx.send(message.data).await;
                         }
                         SwarmEvent::NewListenAddr { address, .. } => {
@@ -188,4 +218,27 @@ fn derive_pair_topic(value: &serde_json::Value) -> Option<String> {
         (quote, base)
     };
     Some(format!("0-dex/{a}-{b}"))
+}
+
+fn load_or_generate_identity(
+    key_file: Option<PathBuf>,
+) -> Result<identity::Keypair, Box<dyn std::error::Error>> {
+    if let Some(path) = key_file {
+        if path.exists() {
+            let encoded = fs::read(&path)?;
+            let keypair = identity::Keypair::from_protobuf_encoding(&encoded)?;
+            info!("Loaded persistent libp2p identity from {}", path.display());
+            return Ok(keypair);
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let keypair = identity::Keypair::generate_ed25519();
+        let encoded = keypair.to_protobuf_encoding()?;
+        fs::write(&path, encoded)?;
+        info!("Generated persistent libp2p identity at {}", path.display());
+        return Ok(keypair);
+    }
+    warn!("No persistent libp2p key file configured; generating ephemeral identity");
+    Ok(identity::Keypair::generate_ed25519())
 }

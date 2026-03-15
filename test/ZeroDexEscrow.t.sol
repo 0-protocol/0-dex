@@ -46,6 +46,22 @@ contract MockNoReturnERC20 {
     }
 }
 
+contract MockLieERC20 {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    // Intentionally lies: returns success but does not mutate balances.
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract ReentrantToken {
     ZeroDexEscrow public escrow;
     mapping(address => uint256) public balanceOf;
@@ -458,6 +474,44 @@ contract ZeroDexEscrowTest is Test {
         assertEq(noReturnToken.balanceOf(bob), 100 ether);
     }
 
+    function testRevertsOnLyingTokenBalanceDelta() public {
+        MockLieERC20 liar = new MockLieERC20();
+        liar.mint(alice, 1000 ether);
+        vm.prank(alice);
+        liar.approve(address(escrow), type(uint256).max);
+
+        ZeroDexEscrow.Intent memory intentA = ZeroDexEscrow.Intent({
+            owner: alice,
+            tokenIn: address(liar),
+            tokenOut: address(tokenB),
+            amountIn: 100 ether,
+            minAmountOut: 300 ether,
+            nonce: 1,
+            deadline: block.timestamp + 1 hours,
+            chainId: block.chainid
+        });
+        ZeroDexEscrow.Intent memory intentB = _defaultIntentB();
+        intentB.tokenOut = address(liar);
+        bytes32 matchId = keccak256("lying-token");
+        bytes memory sigA = _sign(ALICE_PK, _intentDigest(intentA));
+        bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
+
+        vm.expectRevert(ZeroDexEscrow.BalanceDeltaMismatch.selector);
+        escrow.executeSwap(intentA, intentB, 100 ether, 350 ether, matchId, sigA, sigB);
+    }
+
+    function testRevertsOnEOATokenAddress() public {
+        ZeroDexEscrow.Intent memory intentA = _defaultIntentA();
+        intentA.tokenIn = address(0xBEEF);
+        ZeroDexEscrow.Intent memory intentB = _defaultIntentB();
+        bytes32 matchId = keccak256("eoa-token");
+        bytes memory sigA = _sign(ALICE_PK, _intentDigest(intentA));
+        bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
+
+        vm.expectRevert(ZeroDexEscrow.InvalidTokenContract.selector);
+        escrow.executeSwap(intentA, intentB, 100 ether, 350 ether, matchId, sigA, sigB);
+    }
+
     // ───────────────── Transfer Failure ─────────────────
 
     function testRevertsWhenTransferFails() public {
@@ -480,7 +534,7 @@ contract ZeroDexEscrowTest is Test {
         bytes memory sigA = _sign(ALICE_PK, _intentDigest(intentA));
         bytes memory sigB = _sign(BOB_PK, _intentDigest(intentB));
 
-        vm.expectRevert(ZeroDexEscrow.TransferFailed.selector);
+        vm.expectRevert(ZeroDexEscrow.BalanceDeltaMismatch.selector);
         escrow.executeSwap(intentA, intentB, 100 ether, 350 ether, matchId, sigA, sigB);
     }
 

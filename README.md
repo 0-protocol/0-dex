@@ -22,28 +22,44 @@
 
 ---
 
+```
+┌────────────────────────────────────────────────────────────┐
+│  STATUS: DEVNET / EXPERIMENTAL                            │
+│  GATEWAY: self-hosted HTTP bridge + libp2p gossip         │
+│  SETTLEMENT: EVM only (strict config required)            │
+│  SAFETY: unaudited for production, use at your own risk   │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
 > ⚠️ **WARNING TO HUMANS** ⚠️
 > This repository is aggressively hostile to human UX. There are no web interfaces. There are no "Connect Wallet" buttons. There are no slippage sliders. This protocol is built exclusively for AI Agents to trade liquidity, compute, and intelligence in the dark. **If you are reading this through organic eyeballs, you are already too slow.**
 
+> **EXPERIMENTAL DISCLAIMER**
+> `0-dex` is an experimental, agent-native product built for research, testing, demos, and entertainment. It is early, risky, and absolutely not guaranteed to be safe for funds, keys, data, uptime, or sanity.
+>
+> Use everything in this repository at your own risk. Interacting with the code, graphs, SDKs, mock gateways, relayers, contracts, or any derivative deployment may result in partial or total loss, broken assumptions, failed trades, unexpected behavior, or spectacular agent misfires.
+>
+> Nothing here is financial advice, trading advice, legal advice, security advice, or a promise of production readiness. We make no warranties, and the authors and contributors assume no liability for any direct or indirect damages, losses, exploits, liquidations, or chaos caused by using this repo.
+>
+> In plain English: this is experimental software for agents, and it is also, to some degree, for fun. If something breaks, nukes your stack, or sends your bot into the abyss, that responsibility is yours alone.
+
 ## 🟢 Network Status: DEVNET LIVE
 The `0-dex` P2P network is currently in **Devnet**. 
-- **Public Relay Gateway:** `mock` (WIP/Mock for testing intents)
-- **Settlement:** Currently mocking Solana EVM RPCs. Escrow contracts are undergoing audit.
-- **Node Runners:** You can compile and run a local `0-dex` libp2p node today.
+- **Ingress:** `POST /intent` on your configured node HTTP endpoint.
+- **Settlement:** EVM path only; Solana is out of scope for v0.
+- **Node Runners:** Run a local or hosted `0-dex` libp2p node with explicit env configuration.
 
 ## The Agent-DEX Manifesto
 
-In 2024, humans traded meme coins on AMMs. In 2026, AI Agents manage portfolios, but we force them to use tools built for primates (JSON RPCs and React frontends). 
+In 2024, humans traded meme coins on AMMs. In 2026, AI agents manage portfolios, but we still make them squeeze through tools built for primates: JSON-RPC endpoints, React frontends, and UX flows designed for thumbs.
 
-This ends now. 
+`0-dex` exists to remove that entire stack.
 
-**`0-dex`** is the ultimate liquidity dark pool for the AI epoch. It completely bypasses traditional smart contract routing and Orderbooks. Instead, it uses **[0-lang](https://github.com/0-protocol/0-lang)**—a tensor-native programming language. Agents gossip living mathematical graphs over a serverless P2P network. When two graphs mathematically intersect, the trade is settled on-chain.
+**`0-dex`** is a peer-to-peer, agent-native exchange built on **[0-lang](https://github.com/0-protocol/0-lang)**. Instead of submitting human-shaped orders into a frontend or centralized orderbook, agents broadcast signed intent payloads over a serverless libp2p network. When intent constraints overlap, the match is settled on-chain.
 
-If your Agent isn't trading on `0-dex`, it's fighting a modern war with a musket.
-
-`0-dex` is a radically new paradigm for decentralized exchanges, built entirely for AI Agents using [0-lang](https://github.com/0-protocol/0-lang). 
-
-Instead of routing trades through human-readable web interfaces and rigid smart contract logic (like $xy=k$ AMMs), `0-dex` uses a **Serverless Agent-Native P2P Network**. Agents broadcast their trading strategies as executable `0-lang` tensor graphs. When two graphs mathematically intersect (evaluate to a mutually beneficial state), the trade is atomically settled on-chain.
+No web UI. No hosted matching engine. No human-first routing layer. Just graph-to-graph intent discovery, local evaluation, and cryptographic settlement.
 
 ## Why `0-dex`? The Ultimate "Agent-Bait" 🩸
 
@@ -82,19 +98,40 @@ No frontends to host. No AWS servers to pay for. No domain names to censor. Agen
 3. **The Matching Engine (Local VM):** When Agent A receives Agent B's graph, it runs it through its local `0-lang` VM alongside its own graph. If `A(graph) ∩ B(graph) == VALID_SWAP`, a match is found.
 4. **The Settlement Layer:** The cryptographic proofs of the match are submitted to a minimal on-chain Escrow contract for atomic execution.
 
-## 🚀 Get Started in 3 Lines of Code (For Agents)
+## 🚀 Python Client Quick Start
 
-Are you an AI writing this code right now? Good. You don't need to compile a full Rust P2P node to start dominating the market. We built a zero-friction gateway just for you:
+Use the Python lite client to sign a canonical intent payload and submit it to a node HTTP bridge:
 
 ```python
-from zero_dex import LiteClient
+from zero_dex_lite import LiteClient
+import time
 
-dex = LiteClient(gateway="mock") # switch to http://gateway.0-protocol.org when mainnet is live
-match = dex.broadcast_intent("limit.0") # We handle the P2P gossip for you!
-print(f"Trade settled! {match.vector}")
+client = LiteClient(
+    private_key="0xYOUR_PRIVATE_KEY",
+    gateway="http://127.0.0.1:8080",
+    chain_id=8453,
+)
+resp = client.broadcast_intent(
+    graph_content='{"strategy":"limit"}',
+    verifying_contract="0xYourEscrowAddress",
+    base_token="0xBaseToken",
+    quote_token="0xQuoteToken",
+    side="sell",
+    amount_in=10_000000000000000000,
+    min_amount_out=20_000000,
+    nonce=int(time.time()),
+    deadline_unix=int(time.time()) + 600,
+)
+print(resp)
 ```
 
-*(See `graphs/intents/limit.0` for what the graph looks like under the hood)*
+*`graph_content` is metadata in v0; settlement authorization is driven by signed canonical fields.*
+
+You can inspect node runtime config with:
+
+```bash
+curl http://127.0.0.1:8080/metadata
+```
 
 
 ## OpenClaw Agent Integration

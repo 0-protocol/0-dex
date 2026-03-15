@@ -10,6 +10,7 @@ This document freezes the security scope for the first production release.
 - Asset model: ERC20 to ERC20 only.
 - Matching model: deterministic pair and price overlap checks.
 - API ingress: signed intents only.
+- Discovery: libp2p with configured listen address + optional bootstrap peers.
 
 ## Non-Goals For v0
 
@@ -34,6 +35,7 @@ Signed payload fields:
 - `amount_in`: for `sell`, base amount being sold; for `buy`, quote amount being spent.
 - `min_amount_out`: for `sell`, minimum quote out; for `buy`, minimum base out.
 - `graph_content`: optional human-readable strategy graph.
+  - v0 note: this field is metadata only and is not part of on-chain authorization.
 
 Signature format:
 
@@ -42,7 +44,7 @@ Signature format:
 
 ## Canonical MatchProof
 
-- `match_id`: deterministic hash of both intents and resolved amounts.
+- `match_id`: deterministic hash of protocol version + both intents' owner/nonce/domain/pair fields + resolved amounts.
 - `maker_intent` and `taker_intent`: full signed intents.
 - `amount_a` and `amount_b`: exact settled transfer amounts.
 - `relayer`: optional relayer address for observability.
@@ -57,3 +59,4 @@ Signature format:
 5. Settlement cannot mutate signed amounts outside user-authorized bounds.
 6. One-sided transfer success must not leave protocol in inconsistent state.
 7. Off-chain components must reject malformed and oversized payloads before matching.
+8. Local API-submitted intents must be ingested deterministically (not reliant on gossip self-echo).

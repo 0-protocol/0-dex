@@ -1,0 +1,20 @@
+{
+  "private_key": "0x59c6995e998f97a5a0044976f8f2b8d2f22ebf0c6f0f4f7f3afccf4d7ed2d1a5",
+  "owner_address": "0xb31387Dc8ba31300250bD161F606458BfC7CF650",
+  "payload": {
+    "version": "0-dex-v1",
+    "chain_id": 1,
+    "nonce": 42,
+    "deadline_unix": 4102444800,
+    "owner_address": "0xb31387Dc8ba31300250bD161F606458BfC7CF650",
+    "verifying_contract": "0x4444444444444444444444444444444444444444",
+    "base_token": "0x1111111111111111111111111111111111111111",
+    "quote_token": "0x2222222222222222222222222222222222222222",
+    "side": "sell",
+    "amount_in": 100,
+    "min_amount_out": 200,
+    "graph_content": "{\"strategy\":\"limit\"}"
+  },
+  "digest_hex": "0xea32b741fb70631aa01f80e26794fe9f91c8c15766a65805bb1faf3bb55c9b9c",
+  "signature_hex": "0xcca311bdc2af479b195721a6634bed3cafc73e868add4e65630a22c3ea119c15288da13cfc8209725d0faa3c847404c9748e05a7a855606c32a393242c9ab31c1c"
+}

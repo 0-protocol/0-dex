@@ -73,8 +73,10 @@ impl SignedIntent {
     /// Returns the 32-byte hash that was signed.
     pub fn eip712_digest(&self) -> Result<[u8; 32], String> {
         let resolved = self.resolved_intent()?;
-        let verifying_contract =
-            parse_address(&self.payload.verifying_contract, "invalid verifying_contract")?;
+        let verifying_contract = parse_address(
+            &self.payload.verifying_contract,
+            "invalid verifying_contract",
+        )?;
         let owner = parse_address(&resolved.owner, "invalid owner_address")?;
         let token_in = parse_address(&resolved.token_in, "invalid token_in")?;
         let token_out = parse_address(&resolved.token_out, "invalid token_out")?;
@@ -114,6 +116,20 @@ impl SignedIntent {
             || self.payload.quote_token.is_empty()
         {
             return Err("Address fields cannot be empty".to_string());
+        }
+        let owner = parse_address(&self.payload.owner_address, "invalid owner_address")?;
+        let base = parse_address(&self.payload.base_token, "invalid base_token")?;
+        let quote = parse_address(&self.payload.quote_token, "invalid quote_token")?;
+        let verifying = parse_address(
+            &self.payload.verifying_contract,
+            "invalid verifying_contract",
+        )?;
+        if owner == ethabi::Address::zero()
+            || base == ethabi::Address::zero()
+            || quote == ethabi::Address::zero()
+            || verifying == ethabi::Address::zero()
+        {
+            return Err("Addresses cannot be zero".to_string());
         }
         if self
             .payload
@@ -170,11 +186,26 @@ pub fn compute_match_id(
 ) -> String {
     let maker_addr = normalize_address(&maker.payload.owner_address);
     let taker_addr = normalize_address(&taker.payload.owner_address);
+    let maker_contract = normalize_address(&maker.payload.verifying_contract);
+    let taker_contract = normalize_address(&taker.payload.verifying_contract);
+    let maker_base = normalize_address(&maker.payload.base_token);
+    let maker_quote = normalize_address(&maker.payload.quote_token);
+    let taker_base = normalize_address(&taker.payload.base_token);
+    let taker_quote = normalize_address(&taker.payload.quote_token);
     let mut hasher = Keccak256::new();
+    hasher.update(PROTOCOL_VERSION.as_bytes());
+    hasher.update(maker.payload.chain_id.to_le_bytes());
+    hasher.update(taker.payload.chain_id.to_le_bytes());
+    hasher.update(maker_contract.as_bytes());
+    hasher.update(taker_contract.as_bytes());
     hasher.update(maker_addr.as_bytes());
     hasher.update(maker.payload.nonce.to_le_bytes());
     hasher.update(taker_addr.as_bytes());
     hasher.update(taker.payload.nonce.to_le_bytes());
+    hasher.update(maker_base.as_bytes());
+    hasher.update(maker_quote.as_bytes());
+    hasher.update(taker_base.as_bytes());
+    hasher.update(taker_quote.as_bytes());
     hasher.update(amount_a.to_le_bytes());
     hasher.update(amount_b.to_le_bytes());
     format!("0x{}", hex::encode(hasher.finalize()))
@@ -228,6 +259,7 @@ fn keccak(bytes: &[u8]) -> [u8; 32] {
 mod tests {
     use super::*;
     use ethers::signers::{LocalWallet, Signer};
+    use serde_json::Value;
 
     fn sample_payload() -> IntentPayload {
         IntentPayload {
@@ -316,5 +348,24 @@ mod tests {
         };
         let result = intent.verify_signature();
         assert!(result.is_err() || result == Ok(false));
+    }
+
+    #[test]
+    fn matches_golden_signing_vector() {
+        let raw = include_str!("../testdata/signing_vector.json");
+        let vector: Value = serde_json::from_str(raw).expect("valid vector json");
+        let payload: IntentPayload =
+            serde_json::from_value(vector["payload"].clone()).expect("payload decode");
+        let signed = SignedIntent {
+            payload,
+            signature_hex: vector["signature_hex"]
+                .as_str()
+                .expect("signature")
+                .to_string(),
+        };
+        let digest = signed.eip712_digest().expect("digest");
+        let expected = vector["digest_hex"].as_str().expect("digest_hex");
+        assert_eq!(format!("0x{}", hex::encode(digest)), expected);
+        assert!(signed.verify_signature().expect("verify"));
     }
 }

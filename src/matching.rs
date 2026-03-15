@@ -1,11 +1,12 @@
 //! Deterministic order matching engine.
 
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ethers::types::U256;
 use tokio::sync::mpsc;
 
-use crate::protocol::{compute_match_id, IntentPayload, MatchProof, OrderSide, SignedIntent};
+use crate::protocol::{compute_match_id, MatchProof, OrderSide, SignedIntent};
 
 pub struct MatchingEngine {
     local_intents: Vec<SignedIntent>,
@@ -20,16 +21,6 @@ impl MatchingEngine {
             match_sender,
             max_pool_size: 10_000,
         }
-    }
-
-    pub fn register_intent(&mut self, intent: SignedIntent) {
-        self.local_intents.push(intent);
-    }
-
-    pub fn remove_intent_by_nonce(&mut self, owner: &str, nonce: u64) {
-        self.local_intents.retain(|intent| {
-            !(intent.payload.owner_address.eq_ignore_ascii_case(owner) && intent.payload.nonce == nonce)
-        });
     }
 
     pub async fn process_incoming_intent(&mut self, incoming: SignedIntent) -> bool {
@@ -83,6 +74,21 @@ impl MatchingEngine {
 }
 
 fn compute_fill(a: &SignedIntent, b: &SignedIntent) -> Option<(u128, u128)> {
+    if a.payload
+        .owner_address
+        .eq_ignore_ascii_case(&b.payload.owner_address)
+    {
+        return None;
+    }
+    if !is_non_zero_address(&a.payload.owner_address)
+        || !is_non_zero_address(&b.payload.owner_address)
+        || !is_non_zero_address(&a.payload.base_token)
+        || !is_non_zero_address(&a.payload.quote_token)
+        || !is_non_zero_address(&b.payload.base_token)
+        || !is_non_zero_address(&b.payload.quote_token)
+    {
+        return None;
+    }
     if a.payload.chain_id != b.payload.chain_id {
         return None;
     }
@@ -96,10 +102,10 @@ fn compute_fill(a: &SignedIntent, b: &SignedIntent) -> Option<(u128, u128)> {
         return None;
     }
 
-    let (sell, buy) = if a.payload.side == OrderSide::Sell {
-        (a, b)
+    let (sell, buy, sell_is_a) = if a.payload.side == OrderSide::Sell {
+        (a, b, true)
     } else {
-        (b, a)
+        (b, a, false)
     };
 
     // Cross-multiply to avoid precision loss:
@@ -112,25 +118,25 @@ fn compute_fill(a: &SignedIntent, b: &SignedIntent) -> Option<(u128, u128)> {
         return None;
     }
 
-    // Partial fills: amount in base token
-    let amount_base = sell.payload.amount_in.min(buy.payload.min_amount_out);
-    if amount_base == 0 {
+    // v0 mainnet scope: single fill only (no partial fills).
+    let amount_base = sell.payload.amount_in;
+    let amount_quote = sell.payload.min_amount_out;
+    if amount_base == 0 || amount_quote == 0 {
+        return None;
+    }
+    if amount_base < buy.payload.min_amount_out {
+        return None;
+    }
+    if amount_quote > buy.payload.amount_in {
         return None;
     }
 
-    // quote_out = ceil(amount_base * sell.min_amount_out / sell.amount_in)
-    let numerator = U256::from(amount_base) * U256::from(sell.payload.min_amount_out);
-    let denominator = U256::from(sell.payload.amount_in);
-    let quote_out_u256 = (numerator + denominator - U256::one()) / denominator;
-    if quote_out_u256 > U256::from(u128::MAX) {
-        return None;
+    if sell_is_a {
+        Some((amount_base, amount_quote))
+    } else {
+        // `a` is the buy order, so `a` sends quote and `b` sends base.
+        Some((amount_quote, amount_base))
     }
-    let quote_out = quote_out_u256.as_u128();
-    if quote_out > buy.payload.amount_in || quote_out < sell.payload.min_amount_out {
-        return None;
-    }
-
-    Some((amount_base, quote_out))
 }
 
 fn now_unix() -> u64 {
@@ -140,19 +146,26 @@ fn now_unix() -> u64 {
         .unwrap_or_default()
 }
 
+fn is_non_zero_address(raw: &str) -> bool {
+    let Ok(addr) = ethabi::Address::from_str(raw) else {
+        return false;
+    };
+    addr != ethabi::Address::zero()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::protocol::PROTOCOL_VERSION;
 
-    fn signed(side: OrderSide, amount_in: u128, min_out: u128) -> SignedIntent {
+    fn signed(owner: &str, side: OrderSide, amount_in: u128, min_out: u128) -> SignedIntent {
         SignedIntent {
-            payload: IntentPayload {
+            payload: crate::protocol::IntentPayload {
                 version: PROTOCOL_VERSION.to_string(),
                 chain_id: 1,
                 nonce: 1,
                 deadline_unix: now_unix() + 60,
-                owner_address: "0x1111111111111111111111111111111111111111".to_string(),
+                owner_address: owner.to_string(),
                 verifying_contract: "0x4444444444444444444444444444444444444444".to_string(),
                 base_token: "0x2222222222222222222222222222222222222222".to_string(),
                 quote_token: "0x3333333333333333333333333333333333333333".to_string(),
@@ -167,8 +180,41 @@ mod tests {
 
     #[test]
     fn matches_when_prices_overlap() {
-        let sell = signed(OrderSide::Sell, 100, 180);
-        let buy = signed(OrderSide::Buy, 200, 100);
+        let sell = signed(
+            "0x1111111111111111111111111111111111111111",
+            OrderSide::Sell,
+            100,
+            180,
+        );
+        let buy = signed(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            OrderSide::Buy,
+            200,
+            100,
+        );
         assert!(compute_fill(&sell, &buy).is_some());
+    }
+
+    #[test]
+    fn computes_amounts_in_intent_token_in_units() {
+        let sell = signed(
+            "0x1111111111111111111111111111111111111111",
+            OrderSide::Sell,
+            100,
+            180,
+        );
+        let buy = signed(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            OrderSide::Buy,
+            200,
+            100,
+        );
+        let (a_amt, b_amt) = compute_fill(&sell, &buy).expect("sell-first fill");
+        assert_eq!(a_amt, 100);
+        assert_eq!(b_amt, 180);
+
+        let (a_amt_rev, b_amt_rev) = compute_fill(&buy, &sell).expect("buy-first fill");
+        assert_eq!(a_amt_rev, 180); // buy order sends quote token
+        assert_eq!(b_amt_rev, 100); // sell order sends base token
     }
 }

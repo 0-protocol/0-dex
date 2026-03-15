@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
 }
 
 contract ZeroDexEscrow {
@@ -38,6 +39,8 @@ contract ZeroDexEscrow {
     error MatchAlreadyExecuted();
     error ReentrancyBlocked();
     error TransferFailed();
+    error InvalidTokenContract();
+    error BalanceDeltaMismatch();
 
     event TradeSettled(
         bytes32 indexed matchId,
@@ -83,8 +86,8 @@ contract ZeroDexEscrow {
         nonceUsed[intentB.owner][intentB.nonce] = true;
         matchExecuted[matchId] = true;
 
-        _safeTransferFrom(intentA.tokenIn, intentA.owner, intentB.owner, amountA);
-        _safeTransferFrom(intentB.tokenIn, intentB.owner, intentA.owner, amountB);
+        _safeTransferChecked(intentA.tokenIn, intentA.owner, intentB.owner, amountA);
+        _safeTransferChecked(intentB.tokenIn, intentB.owner, intentA.owner, amountB);
 
         emit TradeSettled(matchId, intentA.owner, intentB.owner, intentA.tokenIn, intentB.tokenIn, amountA, amountB);
     }
@@ -102,6 +105,9 @@ contract ZeroDexEscrow {
     function _validateIntent(Intent calldata intent) internal view {
         if (intent.owner == address(0) || intent.tokenIn == address(0) || intent.tokenOut == address(0)) {
             revert InvalidIntent();
+        }
+        if (intent.tokenIn.code.length == 0 || intent.tokenOut.code.length == 0) {
+            revert InvalidTokenContract();
         }
         if (intent.deadline < block.timestamp) revert IntentExpired();
         if (intent.chainId != block.chainid) revert ChainIdMismatch();
@@ -149,5 +155,27 @@ contract ZeroDexEscrow {
         );
         if (!success) revert TransferFailed();
         if (data.length > 0 && !abi.decode(data, (bool))) revert TransferFailed();
+    }
+
+    function _safeTransferChecked(address token, address from, address to, uint256 amount) internal {
+        uint256 fromBefore = _balanceOf(token, from);
+        uint256 toBefore = _balanceOf(token, to);
+        if (fromBefore < amount) revert BalanceDeltaMismatch();
+
+        _safeTransferFrom(token, from, to, amount);
+
+        uint256 fromAfter = _balanceOf(token, from);
+        uint256 toAfter = _balanceOf(token, to);
+        if (fromAfter != fromBefore - amount || toAfter != toBefore + amount) {
+            revert BalanceDeltaMismatch();
+        }
+    }
+
+    function _balanceOf(address token, address owner) internal view returns (uint256) {
+        (bool ok, bytes memory data) = token.staticcall(
+            abi.encodeWithSelector(IERC20.balanceOf.selector, owner)
+        );
+        if (!ok || data.length < 32) revert InvalidTokenContract();
+        return abi.decode(data, (uint256));
     }
 }
