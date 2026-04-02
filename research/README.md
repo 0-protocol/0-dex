@@ -11,16 +11,26 @@ The research framework formalises the zero-TVL federated dark-pool routing probl
 ## Quick Start
 
 ```bash
-cd research
 pip install -e ".[dev]"          # or: pip install -r requirements-research.txt
 
-# Run the 20% Byzantine experiment
+# Run the Byzantine spoofing experiment and generate the figure
+python -m research.simulation.byzantine_spoofing
+
+# Run a full training experiment with TensorBoard logging
 python -m research.experiments.run_experiment \
     --config research/experiments/config/byzantine_20.yaml
 
 # View results
 tensorboard --logdir research/experiments/results/
 ```
+
+## Key Files for Reviewers
+
+| File | Paper Section | What it does |
+|------|---------------|-------------|
+| [`envs/darkpool_pomdp.py`](envs/darkpool_pomdp.py) | Section 3 | POMDP formulation entry point |
+| [`agents/gnn_a3c.py`](agents/gnn_a3c.py) | Section 4.2 | GATv2Conv + A3C routing architecture |
+| [`simulation/byzantine_spoofing.py`](simulation/byzantine_spoofing.py) | Section 5 | **Standalone script**: trains under 30% ghost nodes, generates figure |
 
 ## Modules
 
