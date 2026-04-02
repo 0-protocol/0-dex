@@ -145,5 +145,70 @@ We provide a native `AgentSkill`. Just install the skill, configure your key, an
 
 *(See the `skills/0-dex` folder for the implementation).*
 
+## Research Framework
+
+`0-dex` doubles as an **ML experiment framework** for studying adversarial dark-pool routing with graph neural networks and reinforcement learning. The research modules are designed to be cited in academic papers.
+
+### Modules
+
+| Directory | Description | Key technique |
+|-----------|-------------|---------------|
+| [`envs/`](envs/) | Gymnasium RL environment (`ZeroTVLDarkPool-v0`) | Ephemeral tensor observations with temporal decay |
+| [`agents/`](agents/) | GNN routing policy (GATv2Conv + PPO) | Graph attention over maker-node features |
+| [`simulation/`](simulation/) | Byzantine adversarial simulation | Brier-score penalty isolates spoofing nodes |
+| [`zk/`](zk/) | ZK verification logic (Circom + Halo2 pseudocode) | Tensor commitment proves liquidity solvency |
+| [`experiments/`](experiments/) | Reproducible YAML-driven experiment runner | TensorBoard + CSV logging |
+
+### Quick Start (Research)
+
+```bash
+pip install -e ".[dev]"  # or: pip install -r requirements-research.txt
+
+# Run the 20% Byzantine experiment
+python -m experiments.run_experiment --config experiments/config/byzantine_20.yaml
+
+# View results
+tensorboard --logdir experiments/results/
+```
+
+### Citing
+
+If you use the 0-dex research framework, please cite the relevant papers:
+
+```bibtex
+@article{wang2024zkfl,
+  title={Zero-Knowledge Proof-Based Gradient Aggregation for Federated Learning},
+  author={Wang, Zhipeng and Dong, Nanqing and Sun, Jiahao and Knottenbelt, William and Guo, Yike},
+  journal={IEEE Transactions on Big Data},
+  volume={11}, number={2}, pages={447--460}, year={2024}
+}
+
+@article{dong2024defending,
+  title={Defending against poisoning attacks in federated learning with blockchain},
+  author={Dong, Nanqing and Wang, Zhipeng and Sun, Jiahao and Kampffmeyer, Michael and Knottenbelt, William and Xing, Eric},
+  journal={IEEE Transactions on Artificial Intelligence},
+  volume={5}, number={7}, pages={3743--3756}, year={2024}
+}
+
+@article{piao2025garnn,
+  title={{GARNN}: an interpretable graph attentive recurrent neural network for predicting blood glucose levels via multivariate time series},
+  author={Piao, Chengzhe and Zhu, Taiyu and Baldeweg, Stephanie E and Taylor, Paul and Georgiou, Pantelis and Sun, Jiahao and Wang, Jun and Li, Kezhi},
+  journal={Neural Networks}, volume={185}, pages={107229}, year={2025}
+}
+
+@inproceedings{wang2025aiarena,
+  title={{AIArena}: A Blockchain-Based Decentralized {AI} Training Platform},
+  author={Wang, Zhipeng and Sun, Rui and Lui, Eric and Zhou, Tao and Wen, Yizhuo and Sun, Jiahao},
+  booktitle={Companion Proceedings of the ACM on Web Conference 2025},
+  pages={1375--1379}, year={2025}
+}
+
+@article{lui2024sok,
+  title={{SoK}: Blockchain-Based Decentralized {AI} ({DeAI})},
+  author={Lui, Eric and Sun, Rui and Shah, Vraj and Xiong, Xihan and Sun, Jiahao and Crapis, Davide and Knottenbelt, William and Wang, Zhipeng},
+  journal={arXiv preprint arXiv:2411.17461}, year={2024}
+}
+```
+
 ## License
 AGPL-3.0
