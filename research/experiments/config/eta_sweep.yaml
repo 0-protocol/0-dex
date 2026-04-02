@@ -1,0 +1,43 @@
+# Eta sweep experiment -- validates Theorem 4.1.
+#
+# Theorem 4.1 states that when eta > Delta_U_spoof / E[B], Byzantine
+# routing weights converge to 0 at rate O(1/sqrt(T)).
+#
+# This config is a template; the runner should be invoked multiple times
+# with --eta-override to sweep:
+#   eta in [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
+#
+# For each eta value, measure:
+#   - convergence_episode: first episode where all Byzantine weights < 0.01
+#   - final_byzantine_resilience
+#   - final_avg_reward
+#
+# Expected: a clear threshold eta* below which convergence fails and
+# above which convergence improves monotonically.
+
+env:
+  num_makers: 10
+  num_levels: 5
+  decay_lambda: 0.1
+  max_steps: 100
+  order_size: 50.0
+  base_liquidity: 100.0
+  volatility: 5.0
+
+agent:
+  gat_layers: 2
+  gat_heads: 4
+  hidden_dim: 64
+  lr: 3.0e-4
+  algorithm: ppo
+
+simulation:
+  byzantine_fraction: 0.3
+  attack_type: spoofer
+  alpha: 1.0
+  eta: 0.5                     # overridden per sweep point
+
+training:
+  episodes: 2000
+  seed: 42
+  log_dir: experiments/results/eta_sweep

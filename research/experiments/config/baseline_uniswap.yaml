@@ -1,0 +1,28 @@
+# Uniswap V3 AMM baseline comparison (Section 5).
+# Measures capital efficiency of a constant-product AMM with TVL.
+# FLARE (zero-TVL) achieves infinite capital efficiency by comparison.
+
+env:
+  num_makers: 10
+  num_levels: 5
+  decay_lambda: 0.1
+  max_steps: 100
+  order_size: 50.0
+  base_liquidity: 100.0
+  volatility: 5.0
+
+baseline:
+  type: uniswap_v3
+  tvl: 1000000.0
+  fee_bps: 30
+
+simulation:
+  byzantine_fraction: 0.0
+  attack_type: spoofer
+  alpha: 1.0
+  eta: 0.5
+
+training:
+  episodes: 1000
+  seed: 42
+  log_dir: experiments/results/baseline_uniswap

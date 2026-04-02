@@ -1,0 +1,14 @@
+{
+  "name": "zero-dex-zk-circuits",
+  "version": "0.1.0",
+  "description": "Circom ZK circuits for 0-dex tensor commitment proofs",
+  "private": true,
+  "dependencies": {
+    "circomlib": "^2.0.5"
+  },
+  "scripts": {
+    "compile": "circom tensor_proof.circom --r1cs --wasm --sym",
+    "setup": "snarkjs groth16 setup tensor_proof.r1cs pot12_final.ptau circuit.zkey",
+    "verify-key": "snarkjs zkey export verificationkey circuit.zkey verification_key.json"
+  }
+}
